@@ -68,6 +68,18 @@ try {
     $r = Run @("-Repo", "alienheadbill/this-repo-does-not-exist")
     Check ($r.Code -ne 0 -and $r.Output -match "Couldn't") "Bad repo gives a clear error" $r.Output
 
+    # 5b. Not signed in / bad token -> sign-in help, not a crash
+    $savedToken = $env:GH_TOKEN
+    $env:GH_TOKEN = "not-a-real-token"
+    try { $r = Run } finally { $env:GH_TOKEN = $savedToken }
+    if ($r.Code -eq 0) {
+        # Some sandboxes inject credentials at the network level, so a fake token is ignored.
+        Write-Host "  SKIP  Bad sign-in test (this environment overrides GitHub credentials)"
+    } else {
+        Check ($r.Output -match "gh auth login" -and $r.Output -notmatch "Something went wrong") `
+              "Bad sign-in shows the 'gh auth login' help instead of crashing" $r.Output
+    }
+
     # 6. Admin install step survives a user name with a space and an apostrophe
     $func = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
                                      $n.Name -eq "Get-EncodedInstallCommand" }, $true) | Select-Object -First 1

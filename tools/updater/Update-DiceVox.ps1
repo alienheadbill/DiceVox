@@ -59,6 +59,23 @@ function Fail ($msg) {
     Finish 1
 }
 
+# Runs gh and returns its text output + exit code. Windows PowerShell 5.1
+# turns any stderr from a program into a crash when ErrorActionPreference is
+# "Stop", so gh runs with "Continue" here and errors come back as plain text.
+function Invoke-Gh ([string[]] $ghArgs) {
+    $ErrorActionPreference = "Continue"
+    $out = & $script:ghExe @ghArgs 2>&1 | ForEach-Object { "$_" }
+    return @{ Out = (($out -join "`n").Trim()); Code = $LASTEXITCODE }
+}
+
+# Safety net: any unexpected error is shown and the window stays open.
+trap {
+    Write-Host ""
+    Write-Host "Something went wrong: $_" -ForegroundColor Red
+    Write-Host "Take a screenshot of this window and send it over." -ForegroundColor Red
+    Finish 1
+}
+
 Write-Host ""
 Write-Host "  AHE  |  $Plugin updater" -ForegroundColor Magenta
 Write-Host "  ----------------------------------------"
@@ -90,7 +107,14 @@ if ($isWin -and -not $NoShortcut) {
 }
 
 # --- 2. GitHub CLI present and signed in? ------------------------------------
-if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+$ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+$script:ghExe = if ($ghCmd) { $ghCmd.Source } else { $null }
+if (-not $script:ghExe -and $isWin) {
+    # Freshly installed via winget but this window started before PATH was updated.
+    $fallback = Join-Path $env:ProgramFiles "GitHub CLI\gh.exe"
+    if (Test-Path $fallback) { $script:ghExe = $fallback }
+}
+if (-not $script:ghExe) {
     Fail ("GitHub CLI is not installed. Open PowerShell and run:`n" +
           "    winget install --id GitHub.cli`n" +
           "then close and reopen PowerShell and run:`n" +
@@ -101,9 +125,10 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
 $assetName = "$Plugin-Windows.zip"
 Say "Checking for a new build..."
 
-$json = & gh api "repos/$Repo/releases/tags/$Release" 2>&1
-if ($LASTEXITCODE -ne 0) {
-    $err = ($json | Out-String).Trim()
+$res = Invoke-Gh @("api", "repos/$Repo/releases/tags/$Release")
+$json = $res.Out
+if ($res.Code -ne 0) {
+    $err = $json
     if ($err -match "auth login|401|Bad credentials|Not Found|404") {
         # A private repo looks "Not Found" when you're not signed in.
         Fail ("Couldn't get the release. Most likely the GitHub CLI isn't signed in.`n" +
@@ -148,8 +173,8 @@ try {
     # (Passing a zip through a program's text output would corrupt it.)
     # GitHub redirects to a signed storage URL; the token is dropped on that hop.
     $zipPath = Join-Path $work $assetName
-    $token   = (& gh auth token 2>$null | Out-String).Trim()
-    if (-not $token) { $token = $env:GH_TOKEN }
+    $tok     = Invoke-Gh @("auth", "token")
+    $token   = if ($tok.Code -eq 0) { $tok.Out } else { $env:GH_TOKEN }
     $headers = @{ Accept = "application/octet-stream"; "User-Agent" = "AHE-Updater" }
     if ($token) { $headers.Authorization = "Bearer $token" }
 
