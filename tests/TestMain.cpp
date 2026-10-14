@@ -144,6 +144,22 @@ int main()
                "Accepts mono and stereo tracks");
     }
     {
+        // Hosts identify the plugin by these codes. Changing them makes saved
+        // FL Studio projects lose DiceVox, so this test locks them in place.
+        auto fourCC = [] (int code)
+        {
+            std::string s;
+            for (int shift = 24; shift >= 0; shift -= 8)
+                s += (char) ((code >> shift) & 0xff);
+            return s;
+        };
+        const auto manufacturer = fourCC (JucePlugin_ManufacturerCode);
+        const auto plugin       = fourCC (JucePlugin_PluginCode);
+        check (manufacturer == "Ahen" && plugin == "Dvox" && std::string (JucePlugin_Manufacturer) == "AHE",
+               "Plugin identity is AHE / Ahen / Dvox (never change after release)",
+               std::string (JucePlugin_Manufacturer) + " / " + manufacturer + " / " + plugin);
+    }
+    {
         DiceVoxProcessor p;
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
         check (editor != nullptr && editor->getWidth() > 0, "Editor window opens");

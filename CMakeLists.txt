@@ -20,12 +20,14 @@ FetchContent_MakeAvailable(JUCE)
 # ---------------------------------------------------------------------------
 # The plugin
 # ---------------------------------------------------------------------------
-juce_add_plugin(DiceVox
-    COMPANY_NAME            "AHE"
-    PLUGIN_MANUFACTURER_CODE Dvxa
-    PLUGIN_CODE             Dvx1
-    FORMATS                 VST3 Standalone
+include(cmake/AHE.cmake)
+
+# Identity: AHE company code (cmake/AHE.cmake) + DiceVox's own code "Dvox".
+# Never change PLUGIN_CODE after release — saved projects would lose the plugin.
+ahe_add_plugin(DiceVox
     PRODUCT_NAME            "DiceVox"
+    PLUGIN_CODE             Dvox
+    FORMATS                 VST3 Standalone
     IS_SYNTH                FALSE
     NEEDS_MIDI_INPUT        FALSE
     NEEDS_MIDI_OUTPUT       FALSE
