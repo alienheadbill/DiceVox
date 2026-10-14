@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="476" height="186" viewBox="0 0 476 186"><title>AHE Audio alien head and wordmark</title><g transform="translate(8 17) scale(.65)"><g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 80 C20 40 46 12 80 10 C114 12 140 40 142 80" stroke="#52BE29" stroke-width="10"/>
+    <path d="M20 109 C30 140 57 165 80 179 C103 165 130 140 140 109" stroke="#52BE29" stroke-width="10"/>
+    </g><path d="M28 91 C52 91 71 107 73 139 C50 138 32 123 28 91Z" fill="#52BE29"/>
+    <path d="M132 91 C108 91 89 107 87 139 C110 138 128 123 132 91Z" fill="#52BE29"/>
+    <path d="M63 159 Q80 146 97 159" fill="none" stroke="#52BE29" stroke-width="5" stroke-linecap="round"/></g><g transform="translate(164 20) scale(.63)"><g fill="#8F32C7">
+    <path d="M0 118 V39 L42 0 H143 V118 H105 V80 H41 V118Z M41 49 H105 V34 H57Z" fill-rule="evenodd"/>
+    <path d="M160 0 H198 V42 H259 V0 H297 V118 H259 V80 H198 V118 H160Z"/>
+    <path d="M314 0 H456 L440 34 H352 V43 H439 V76 H352 V84 H443 L459 118 H314Z"/>
+    </g></g><text x="310" y="152" text-anchor="middle" fill="#F0EEF6" font-family="Inter,Arial,sans-serif" font-size="29" letter-spacing="11" font-weight="600">AUDIO</text></svg>
