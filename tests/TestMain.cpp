@@ -187,13 +187,29 @@ int main()
                "Parameter IDs and order unchanged", ids.joinIntoString (",").toStdString());
     }
     {
-        // Exact default state XML captured from main (281c9f6) before the UI work.
+        // Default state captured from main (281c9f6) before the UI work. Structure
+        // (root tag, parameter IDs, attributes, order) must match exactly; values
+        // are compared numerically because float formatting differs by platform
+        // (Apple Silicon stores the 0 dB default as ~3.6e-7, an inaudible rounding
+        // difference in the unchanged parameter code).
         DiceVoxProcessor p;
-        const auto xml = p.state.copyState().toXmlString (juce::XmlElement::TextFormat().singleLine());
-        const juce::String expected = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <DiceVoxState><PARAM id=\"bypass\" value=\"0.0\"/>"
-                                      "<PARAM id=\"input_gain\" value=\"0.0\"/><PARAM id=\"mix\" value=\"100.0\"/>"
-                                      "<PARAM id=\"output_gain\" value=\"0.0\"/></DiceVoxState>";
-        check (xml == expected, "Saved-state format unchanged (matches main)", xml.toStdString());
+        auto xml = p.state.copyState().createXml();
+
+        struct Expected { const char* id; double value; };
+        const Expected expected[] = { { "bypass", 0.0 }, { "input_gain", 0.0 }, { "mix", 100.0 }, { "output_gain", 0.0 } };
+
+        bool ok = xml != nullptr && xml->getTagName() == "DiceVoxState" && xml->getNumChildElements() == 4;
+        juce::String detail = xml != nullptr ? xml->toString (juce::XmlElement::TextFormat().singleLine().withoutHeader()) : "no xml";
+
+        for (int i = 0; ok && i < 4; ++i)
+        {
+            auto* e = xml->getChildElement (i);
+            ok = e->getTagName() == "PARAM"
+              && e->getNumAttributes() == 2
+              && e->getStringAttribute ("id") == expected[i].id
+              && std::abs (e->getDoubleAttribute ("value") - expected[i].value) < 1.0e-4;
+        }
+        check (ok, "Saved-state format unchanged (matches main)", detail.toStdString());
     }
 
     // ---------------------------------------------------------------------
