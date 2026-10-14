@@ -1,0 +1,45 @@
+name: Build DiceVox
+
+# Builds the VST3 for Windows and macOS on every push, runs the offline tests,
+# and attaches the plugin as a downloadable zip on the workflow run page.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            extra_config: ""
+          - name: macOS
+            os: macos-latest
+            extra_config: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.extra_config }}
+
+      - name: Build plugin + tests
+        shell: bash
+        run: cmake --build build --config Release --parallel --target DiceVox_VST3 DiceVox_Standalone DiceVoxTests
+
+      - name: Run offline tests
+        shell: bash
+        run: |
+          if [ -f build/Release/DiceVoxTests.exe ]; then build/Release/DiceVoxTests.exe; else build/DiceVoxTests; fi
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiceVox-${{ matrix.name }}-VST3
+          path: build/DiceVox_artefacts/Release/VST3/DiceVox.vst3
