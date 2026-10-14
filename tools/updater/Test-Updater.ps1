@@ -14,9 +14,18 @@ $plugin  = Join-Path $vst3 "DiceVox.vst3"
 $common  = @("-InstallDir", $vst3, "-StateDir", $state, "-NoElevate", "-NoShortcut", "-NoPause")
 $failures = 0
 
-function Check ([bool] $ok, [string] $name) {
+function Check ([bool] $ok, [string] $name, [string] $detail = "") {
     Write-Host ($(if ($ok) { "  PASS  " } else { "  FAIL  " }) + $name)
-    if (-not $ok) { $script:failures++ }
+    if (-not $ok) {
+        $script:failures++
+        if ($detail) { Write-Host $detail }
+        if ($env:GITHUB_ACTIONS) {
+            # Surface the failure as a GitHub annotation (readable without the full log).
+            $d = ($detail -replace "%", "%25" -replace "`r", "" -replace "`n", "%0A")
+            if ($d.Length -gt 3000) { $d = $d.Substring(0, 3000) }
+            Write-Host "::error title=$name::$d"
+        }
+    }
 }
 
 function Run ([string[]] $extra = @()) {
@@ -26,7 +35,7 @@ function Run ([string[]] $extra = @()) {
     return @{ Output = $out; Code = $LASTEXITCODE }
 }
 
-Write-Host "Updater tests"
+Write-Host "Updater tests (PowerShell $($PSVersionTable.PSVersion))"
 try {
     # 0. Script parses cleanly
     $errs = $null
@@ -37,27 +46,27 @@ try {
     $r = Run
     $binary = Get-ChildItem -Recurse -File -Path $plugin -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match "x86_64-win" } | Select-Object -First 1
-    Check ($r.Code -eq 0 -and $r.Output -match "updated" -and $binary) "Fresh install puts DiceVox.vst3 in the VST3 folder"
+    Check ($r.Code -eq 0 -and $r.Output -match "updated" -and $binary) "Fresh install puts DiceVox.vst3 in the VST3 folder" $r.Output
     Check (Test-Path (Join-Path $state "DiceVox.installed")) "Remembers which build is installed"
 
     # 2. Already current -> no download
     $r = Run
-    Check ($r.Code -eq 0 -and $r.Output -match "already have the newest") "Second run says it's already up to date"
+    Check ($r.Code -eq 0 -and $r.Output -match "already have the newest") "Second run says it's already up to date" $r.Output
 
     # 3. Forced reinstall replaces the folder (no leftover files from old builds)
     $stale = Join-Path $plugin "STALE_FILE"
     Set-Content -Path $stale -Value "old"
     $r = Run @("-Force")
-    Check ($r.Code -eq 0 -and -not (Test-Path $stale)) "Reinstall removes files left over from an old build"
+    Check ($r.Code -eq 0 -and -not (Test-Path $stale)) "Reinstall removes files left over from an old build" $r.Output
 
     # 4. Plugin deleted by hand -> reinstalls even though the state file says current
     Remove-Item -Recurse -Force $plugin
     $r = Run
-    Check ($r.Code -eq 0 -and (Test-Path $plugin)) "Reinstalls if the plugin folder went missing"
+    Check ($r.Code -eq 0 -and (Test-Path $plugin)) "Reinstalls if the plugin folder went missing" $r.Output
 
     # 5. Bad repo -> clear error, non-zero exit
     $r = Run @("-Repo", "alienheadbill/this-repo-does-not-exist")
-    Check ($r.Code -ne 0 -and $r.Output -match "Couldn't") "Bad repo gives a clear error"
+    Check ($r.Code -ne 0 -and $r.Output -match "Couldn't") "Bad repo gives a clear error" $r.Output
 
     # 6. Admin install step survives a user name with a space and an apostrophe
     $func = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
