@@ -1,10 +1,17 @@
 name: Build DiceVox
 
-# Builds the VST3 for Windows and macOS on every push, runs the offline tests,
-# and attaches the plugin as a downloadable zip on the workflow run page.
+# Builds the VST3 for Windows and macOS on every push and runs the offline tests.
+#  - Push to main      -> refreshes the "Latest build" release on the repo's main page
+#  - Push a tag v0.2.0 -> creates a permanent "v0.2.0" release
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -45,3 +52,48 @@ jobs:
           # Upload the parent folder so the zip contains DiceVox.vst3/ itself,
           # ready to drop into C:\Program Files\Common Files\VST3
           path: build/DiceVox_artefacts/Release/VST3/
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Zip plugins (DiceVox.vst3 folder at the top of each zip)
+        shell: bash
+        run: |
+          # Artifact downloads drop file permissions; restore the Mac binary's execute bit.
+          chmod +x dist/DiceVox-macOS-VST3/DiceVox.vst3/Contents/MacOS/* || true
+          for os in Windows macOS; do
+            (cd "dist/DiceVox-$os-VST3" && zip -qr "$GITHUB_WORKSPACE/DiceVox-$os.zip" DiceVox.vst3)
+          done
+          ls -l DiceVox-*.zip
+
+      - name: Publish
+        shell: bash
+        run: |
+          NOTES="Built from commit ${GITHUB_SHA::7}.
+
+          **Install (Windows):** unzip DiceVox-Windows.zip, copy the DiceVox.vst3 folder into
+          C:\Program Files\Common Files\VST3, then in FL Studio use Options > Manage plugins > Find more plugins.
+
+          **Install (Mac):** unzip DiceVox-macOS.zip and copy DiceVox.vst3 into ~/Library/Audio/Plug-Ins/VST3.
+          This build is unsigned, so macOS may block it the first time."
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            gh release create "$GITHUB_REF_NAME" DiceVox-*.zip -R "$GITHUB_REPOSITORY" \
+              --title "DiceVox $GITHUB_REF_NAME" --notes "$NOTES" --latest
+          else
+            gh release delete latest-build -R "$GITHUB_REPOSITORY" --cleanup-tag -y || true
+            gh release create latest-build DiceVox-*.zip -R "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "Latest build" --notes "$NOTES" --latest
+          fi

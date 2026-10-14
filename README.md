@@ -38,9 +38,11 @@ Quick test without FL: run `build\DiceVox_artefacts\Release\Standalone\DiceVox.e
 ## Build without installing anything (GitHub)
 
 Push this folder to a GitHub repo. The workflow in `.github/workflows/build.yml`
-builds Windows and macOS VST3s on every push and runs the tests. Download them
-from the repo's **Actions** tab → latest run → *Artifacts*. This is the easiest
-way to hand builds to other producers.
+builds Windows and macOS VST3s on every push and runs the tests.
+
+- Every push to `main` refreshes the **Latest build** release. Download it from
+  the **Releases** box on the right side of the repo's main page.
+- To make a permanent version, push a tag: `git tag v0.2.0 && git push --tags`.
 
 Note: macOS builds are unsigned, so Mac users will get a security warning until
 the plugin is code-signed and notarized (needed before a public release).
