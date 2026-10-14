@@ -4,6 +4,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
 #include "Params.h"
+#include "ahe/AHEBrandMarks.h"
+#include "ui/RollChamber.h"
 
 #include <cmath>
 #include <iostream>
@@ -163,6 +165,141 @@ int main()
         DiceVoxProcessor p;
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
         check (editor != nullptr && editor->getWidth() > 0, "Editor window opens");
+    }
+
+    // ---------------------------------------------------------------------
+    // Compatibility guards: the UI work must not change what hosts/projects see
+    // ---------------------------------------------------------------------
+    {
+        DiceVoxProcessor p;
+        juce::StringArray ids;
+        for (auto* param : p.getParameters())
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
+                ids.add (ranged->getParameterID());
+        check (ids.joinIntoString (",") == "input_gain,output_gain,mix,bypass",
+               "Parameter IDs and order unchanged", ids.joinIntoString (",").toStdString());
+    }
+    {
+        // Exact default state XML captured from main (281c9f6) before the UI work.
+        DiceVoxProcessor p;
+        const auto xml = p.state.copyState().toXmlString (juce::XmlElement::TextFormat().singleLine());
+        const juce::String expected = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <DiceVoxState><PARAM id=\"bypass\" value=\"0.0\"/>"
+                                      "<PARAM id=\"input_gain\" value=\"0.0\"/><PARAM id=\"mix\" value=\"100.0\"/>"
+                                      "<PARAM id=\"output_gain\" value=\"0.0\"/></DiceVoxState>";
+        check (xml == expected, "Saved-state format unchanged (matches main)", xml.toStdString());
+    }
+
+    // ---------------------------------------------------------------------
+    // Editor: every restyled control is still wired to its parameter
+    // ---------------------------------------------------------------------
+    {
+        std::function<juce::Component* (juce::Component&, const juce::String&)> findById =
+            [&] (juce::Component& root, const juce::String& id) -> juce::Component*
+        {
+            for (auto* child : root.getChildren())
+            {
+                if (child->getComponentID() == id) return child;
+                if (auto* hit = findById (*child, id)) return hit;
+            }
+            return nullptr;
+        };
+
+        DiceVoxProcessor p;
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+        auto value = [&] (const char* id) { return p.state.getRawParameterValue (id)->load(); };
+
+        struct KnobCase { const char* id; double uiValue; const char* unit; };
+        for (auto kc : { KnobCase { ParamIDs::inputGain, -7.5, " dB" },
+                         KnobCase { ParamIDs::mix, 35.0, " %" },
+                         KnobCase { ParamIDs::outputGain, 4.2, " dB" } })
+        {
+            auto* slider = dynamic_cast<juce::Slider*> (findById (*editor, kc.id));
+            if (slider == nullptr)
+            {
+                check (false, std::string ("Knob for ") + kc.id + " exists");
+                continue;
+            }
+
+            // UI -> parameter
+            slider->setValue (kc.uiValue, juce::sendNotificationSync);
+            const bool uiToParam = std::abs (value (kc.id) - (float) kc.uiValue) < 0.051f;
+
+            // Host automation -> UI
+            auto* param = p.state.getParameter (kc.id);
+            param->setValueNotifyingHost (param->convertTo0to1 (param->convertFrom0to1 (param->getDefaultValue())));
+            const bool paramToUi = std::abs (slider->getValue() - (double) param->convertFrom0to1 (param->getDefaultValue())) < 0.051;
+
+            // Units shown, typed values with the unit are understood, double-click resets to default
+            const bool unitShown = slider->getTextFromValue (slider->getValue()).endsWith (kc.unit);
+            const bool typedOk   = std::abs (slider->getValueFromText ("3.0" + juce::String (kc.unit)) - 3.0) < 0.051;
+            const bool resetOk   = slider->isDoubleClickReturnEnabled()
+                                && std::abs (slider->getDoubleClickReturnValue() - (double) param->convertFrom0to1 (param->getDefaultValue())) < 1.0e-6;
+
+            check (uiToParam && paramToUi && unitShown && typedOk && resetOk,
+                   std::string ("Knob '") + kc.id + "' drives its parameter, follows automation, shows units, resets on double-click",
+                   "ui->param " + std::to_string (uiToParam) + ", param->ui " + std::to_string (paramToUi)
+                       + ", unit " + std::to_string (unitShown) + ", typed " + std::to_string (typedOk)
+                       + ", reset " + std::to_string (resetOk));
+        }
+
+        auto* bypass = dynamic_cast<juce::Button*> (findById (*editor, ParamIDs::bypass));
+        bool bypassOk = false;
+        if (bypass != nullptr)
+        {
+            bypass->setToggleState (true, juce::sendNotificationSync);
+            const bool on = value (ParamIDs::bypass) > 0.5f;
+            p.state.getParameter (ParamIDs::bypass)->setValueNotifyingHost (0.0f);
+            bypassOk = on && ! bypass->getToggleState();
+        }
+        check (bypassOk, "Bypass switch drives the bypass parameter and follows automation");
+    }
+    {
+        // ROLL must not be clickable/enabled-looking in Phase 1; ADVANCED tab is disabled.
+        DiceVoxProcessor p;
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+
+        std::function<void (juce::Component&, std::function<void (juce::Component&)>)> visit =
+            [&] (juce::Component& c, std::function<void (juce::Component&)> fn) { fn (c); for (auto* ch : c.getChildren()) visit (*ch, fn); };
+
+        bool rollFound = false, rollHasButton = false, advancedDisabled = false;
+        visit (*editor, [&] (juce::Component& c)
+        {
+            if (auto* roll = dynamic_cast<RollChamber*> (&c))
+            {
+                rollFound = true;
+                visit (*roll, [&] (juce::Component& inner) { rollHasButton |= dynamic_cast<juce::Button*> (&inner) != nullptr; });
+            }
+            if (auto* b = dynamic_cast<juce::TextButton*> (&c))
+                if (b->getButtonText() == "ADVANCED")
+                    advancedDisabled = ! b->isEnabled();
+        });
+        check (rollFound && ! rollHasButton, "ROLL chamber is shown but not clickable (randomizer is Phase 3)");
+        check (advancedDisabled, "ADVANCED tab is disabled (Phase 5)");
+
+        check (editor->getWidth() == 520 && editor->getHeight() == 360, "Editor opens at compact 520x360",
+               std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight()));
+    }
+    {
+        // Brand marks load from embedded SVGs; the lockup's "AUDIO" text is visible (non-zero size).
+        auto icon = ahe::brand::alienIcon();
+        auto ufo  = ahe::brand::ufoIcon();
+        auto lock = ahe::brand::lockup();
+
+        float audioHeight = 0.0f;
+        if (lock != nullptr)
+        {
+            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
+            {
+                if (auto* t = dynamic_cast<juce::DrawableText*> (&c))
+                    if (t->getText() == "AUDIO")
+                        audioHeight = t->getBoundingBox().getBoundingBox().getHeight();
+                for (auto* ch : c.getChildren()) find (*ch);
+            };
+            find (*lock);
+        }
+        check (icon != nullptr && ufo != nullptr && lock != nullptr, "Brand marks load from embedded SVGs");
+        check (audioHeight > 1.0f, "Lockup 'AUDIO' text renders (SVG text attributes applied)",
+               "height " + std::to_string (audioHeight));
     }
 
     std::cout << (failures == 0 ? "All tests passed.\n" : std::to_string (failures) + " test(s) failed.\n");

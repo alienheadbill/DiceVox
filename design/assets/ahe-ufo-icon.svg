@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><title>AHE Audio UFO icon</title><g transform="translate(48 31) scale(1.0)"><path d="M61 38 C66 19 95 19 100 38" fill="none" stroke="#8F32C7" stroke-width="10" stroke-linecap="round"/>
+    <path d="M17 75 C21 52 44 44 80 44 C116 44 139 52 143 75 C130 85 108 93 80 93 C52 93 30 85 17 75Z" fill="#8F32C7"/>
+    <path d="M23 66 C55 56 105 56 137 66" fill="none" stroke="#D9ACFB" stroke-width="4" opacity=".9"/>
+    <path d="M51 92 L24 170 H136 L109 92" fill="#52BE29" opacity=".24"/>
+    <path d="M51 95 L24 169 M109 95 L136 169" stroke="#52BE29" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M50 166 H110" stroke="#52BE29" stroke-width="6" stroke-linecap="round"/>
+    <path d="M79 100 V155 M62 100 L53 145 M96 100 L105 145" stroke="#52BE29" stroke-width="4" opacity=".75" stroke-linecap="round"/>
+    <ellipse cx="80" cy="90" rx="33" ry="7" fill="#52BE29"/></g></svg>

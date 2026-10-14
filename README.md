@@ -73,12 +73,30 @@ the plugin is code-signed and notarized (needed before a public release).
 ```
 Source/
   PluginProcessor.*   audio engine: input gain → dry tap → FxChain → mix → output gain
-  PluginEditor.*      UI
+  PluginEditor.*      DiceVox editor layout (520x360 design canvas, scales to 150%)
   Params.*            global parameter IDs + full parameter layout
   modules/
     EffectModule.h    interface every effect implements
     FxChain.*         owns the effects, gives each an on/off switch, runs them in order
-tests/TestMain.cpp    offline audio tests (no DAW needed)
+  ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
+    AHETheme.h        design tokens: colours, spacing, radii, font roles
+    AHELookAndFeel.*  knob / button / tab / switch / tooltip styling, focus-visible rings
+    AHEBrandMarks.*   alien, UFO and AHE AUDIO marks from the embedded SVGs
+    AHEHeader.*       shared header bar (mark, product name, maker mark)
+    AHEKnob.*         labelled knob bound to one parameter (units, reset, typing)
+  ui/
+    RollChamber.*     DiceVox ROLL hero area (shown as unavailable until Phase 3)
+design/assets/        approved brand SVGs, compiled into the plug-in
+tests/TestMain.cpp    offline audio, compatibility and editor-wiring tests (no DAW needed)
+tools/snapshots/      renders the editor to PNGs for design review (optional)
+```
+
+### UI review screenshots
+
+```bash
+cmake -B build -DDICEVOX_BUILD_SNAPSHOTS=ON
+cmake --build build --target DiceVoxSnapshots
+./build/DiceVoxSnapshots shots     # on Linux: run under xvfb + a window manager
 ```
 
 ### Adding an effect (Phase 2 onward)
