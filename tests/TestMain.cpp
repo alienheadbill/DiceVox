@@ -8,6 +8,7 @@
 #include "ui/RollChamber.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 
 namespace
@@ -23,7 +24,13 @@ namespace
         std::cout << (ok ? "  PASS  " : "  FAIL  ") << name;
         if (! detail.empty()) std::cout << "  (" << detail << ")";
         std::cout << "\n";
-        if (! ok) ++failures;
+        if (! ok)
+        {
+            ++failures;
+            // In GitHub Actions, surface the failure as an annotation (readable without the full log).
+            if (std::getenv ("GITHUB_ACTIONS") != nullptr)
+                std::cout << "::error title=" << name << "::" << detail << "\n";
+        }
     }
 
     void setParam (DiceVoxProcessor& p, const juce::String& id, float realValue)
