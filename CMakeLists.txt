@@ -21,7 +21,7 @@ FetchContent_MakeAvailable(JUCE)
 # The plugin
 # ---------------------------------------------------------------------------
 juce_add_plugin(DiceVox
-    COMPANY_NAME            "DiceVox Audio"
+    COMPANY_NAME            "AHE"
     PLUGIN_MANUFACTURER_CODE Dvxa
     PLUGIN_CODE             Dvx1
     FORMATS                 VST3 Standalone
