@@ -1,0 +1,48 @@
+{
+  "name": "AHE Audio Design Tokens",
+  "version": "0.1-design-reference",
+  "status": "proposed style, approved direction",
+  "colors": {
+    "brandPurple": "#8F32C7",
+    "alienGreen": "#52BE29",
+    "purpleSoft": "#B47BDD",
+    "greenSoft": "#8FEA65",
+    "canvas": "#101014",
+    "panel": "#1D1B26",
+    "raised": "#282531",
+    "border": "#383442",
+    "textPrimary": "#F0EEF6",
+    "textSecondary": "#A6A1B3",
+    "textMuted": "#716D7D",
+    "warning": "#F07583"
+  },
+  "geometry": {
+    "spacingPx": [
+      4,
+      8,
+      12,
+      16,
+      24,
+      32
+    ],
+    "cornerRadiiPx": [
+      9,
+      14,
+      20
+    ]
+  },
+  "principles": [
+    "Crisp native/vector graphics and studio-readability first",
+    "Purple for selection/main creative action; green for actual enabled processing state",
+    "Never use color alone to communicate state",
+    "No fake audio meters, fake FX modules, or fictional preset behavior",
+    "Retain compact plugin usability at 520x360; larger layouts only when practical and tested",
+    "Separate host chrome from plugin interface",
+    "Use clean readable UI text; brand display lettering only for logo/product names"
+  ],
+  "logos": {
+    "primary": "assets/ahe-alien-horizontal.svg",
+    "small": "assets/ahe-alien-icon.svg",
+    "secondary": "assets/ahe-ufo-icon.svg"
+  }
+}
