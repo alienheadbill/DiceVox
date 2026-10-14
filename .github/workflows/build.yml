@@ -42,4 +42,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DiceVox-${{ matrix.name }}-VST3
-          path: build/DiceVox_artefacts/Release/VST3/DiceVox.vst3
+          # Upload the parent folder so the zip contains DiceVox.vst3/ itself,
+          # ready to drop into C:\Program Files\Common Files\VST3
+          path: build/DiceVox_artefacts/Release/VST3/
