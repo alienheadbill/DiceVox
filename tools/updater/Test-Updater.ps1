@@ -14,8 +14,11 @@ $plugin  = Join-Path $vst3 "DiceVox.vst3"
 $common  = @("-InstallDir", $vst3, "-StateDir", $state, "-NoElevate", "-NoShortcut", "-NoPause")
 $failures = 0
 
+$results = New-Object System.Collections.Generic.List[string]
+
 function Check ([bool] $ok, [string] $name, [string] $detail = "") {
     Write-Host ($(if ($ok) { "  PASS  " } else { "  FAIL  " }) + $name)
+    $script:results.Add($(if ($ok) { "PASS " } else { "FAIL " }) + $name)
     if (-not $ok) {
         $script:failures++
         if ($detail) { Write-Host $detail }
@@ -75,6 +78,7 @@ try {
     if ($r.Code -eq 0) {
         # Some sandboxes inject credentials at the network level, so a fake token is ignored.
         Write-Host "  SKIP  Bad sign-in test (this environment overrides GitHub credentials)"
+        $results.Add("SKIP Bad sign-in test")
     } else {
         Check ($r.Output -match "gh auth login" -and $r.Output -notmatch "Something went wrong") `
               "Bad sign-in shows the 'gh auth login' help instead of crashing" $r.Output
@@ -96,6 +100,10 @@ try {
 }
 finally {
     Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
+}
+
+if ($env:GITHUB_ACTIONS) {
+    Write-Host ("::notice title=Updater tests (PowerShell $($PSVersionTable.PSVersion))::" + ($results -join "%0A"))
 }
 
 if ($failures -eq 0) { Write-Host "All updater tests passed." } else { Write-Host "$failures updater test(s) failed." }
