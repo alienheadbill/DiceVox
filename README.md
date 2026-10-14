@@ -35,6 +35,27 @@ The test run should end with `All tests passed.`
 
 Quick test without FL: run `build\DiceVox_artefacts\Release\Standalone\DiceVox.exe`.
 
+## One-click updates (Windows)
+
+One-time setup:
+
+1. Install the GitHub CLI and sign in (the repo is private). In PowerShell:
+   ```powershell
+   winget install --id GitHub.cli
+   ```
+   Close and reopen PowerShell, then run `gh auth login` (GitHub.com → HTTPS →
+   Login with a web browser).
+2. From the **Latest build** release, download **AHE-Updater-Windows.zip**, unzip it,
+   and double-click **Update-DiceVox.cmd**.
+
+That first run installs DiceVox and adds an **Update DiceVox** shortcut to your
+desktop. From then on, close FL Studio and double-click the shortcut. It
+checks for a newer build, downloads it, and installs it (one admin prompt). If
+you're already current, it says so and does nothing.
+
+Tests for the updater: `powershell -File tools/updater/Test-Updater.ps1`
+(they also run on Windows in CI after each release).
+
 ## Build without installing anything (GitHub)
 
 Push this folder to a GitHub repo. The workflow in `.github/workflows/build.yml`

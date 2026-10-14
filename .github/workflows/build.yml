@@ -64,6 +64,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
 
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -76,12 +78,17 @@ jobs:
           for os in Windows macOS; do
             (cd "dist/DiceVox-$os-VST3" && zip -qr "$GITHUB_WORKSPACE/DiceVox-$os.zip" DiceVox.vst3)
           done
-          ls -l DiceVox-*.zip
+          # One-click updater for Windows (download once; it updates DiceVox from then on)
+          (cd tools/updater && zip -q "$GITHUB_WORKSPACE/AHE-Updater-Windows.zip" Update-DiceVox.cmd Update-DiceVox.ps1)
+          ls -l *.zip
 
       - name: Publish
         shell: bash
         run: |
           NOTES="Built from commit ${GITHUB_SHA::7}.
+
+          **Easiest (Windows):** download AHE-Updater-Windows.zip once, unzip it, and double-click Update-DiceVox.cmd.
+          It installs DiceVox and puts an 'Update DiceVox' shortcut on your desktop for future updates.
 
           **Install (Windows):** unzip DiceVox-Windows.zip, copy the DiceVox.vst3 folder into
           C:\Program Files\Common Files\VST3, then in FL Studio use Options > Manage plugins > Find more plugins.
@@ -90,10 +97,30 @@ jobs:
           This build is unsigned, so macOS may block it the first time."
 
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            gh release create "$GITHUB_REF_NAME" DiceVox-*.zip -R "$GITHUB_REPOSITORY" \
+            gh release create "$GITHUB_REF_NAME" DiceVox-*.zip AHE-Updater-Windows.zip -R "$GITHUB_REPOSITORY" \
               --title "DiceVox $GITHUB_REF_NAME" --notes "$NOTES" --latest
           else
             gh release delete latest-build -R "$GITHUB_REPOSITORY" --cleanup-tag -y || true
-            gh release create latest-build DiceVox-*.zip -R "$GITHUB_REPOSITORY" \
+            gh release create latest-build DiceVox-*.zip AHE-Updater-Windows.zip -R "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --title "Latest build" --notes "$NOTES" --latest
           fi
+
+  test-updater:
+    # Runs the updater against the release that was just published, on a real
+    # Windows machine with the built-in Windows PowerShell 5.1.
+    name: Test updater (Windows PowerShell 5.1)
+    needs: release
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run updater tests
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/updater/Test-Updater.ps1
+          exit $LASTEXITCODE
