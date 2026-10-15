@@ -332,16 +332,20 @@ int main()
 
     {
         // Embedded fonts load, so the UI looks identical on every computer.
-        // Platforms split "family" and "style" differently (e.g. Windows may
-        // report "Inter SemiBold" as the family), so match on the family text.
+        // Platforms split "family" and "style" differently (Windows reports
+        // family "Barlow", style "Condensed ExtraBold Italic"), so check the
+        // combined family + style text.
         auto describe = [] (const juce::Typeface::Ptr& t)
         {
             return t == nullptr ? juce::String ("null") : "[" + t->getName() + " | " + t->getStyle() + "]";
         };
         auto regular = ahe::fonts::uiRegular(), semi = ahe::fonts::uiSemiBold(), disp = ahe::fonts::display();
+        auto fullName = [] (const juce::Typeface::Ptr& t) { return t->getName() + " " + t->getStyle(); };
         const bool ok = regular != nullptr && semi != nullptr && disp != nullptr
-                     && regular->getName().startsWith ("Inter") && semi->getName().startsWith ("Inter")
-                     && disp->getName().startsWith ("Barlow Condensed");
+                     && fullName (regular).contains ("Inter") && fullName (regular).contains ("Regular")
+                     && fullName (semi).contains ("Inter")    && fullName (semi).contains ("SemiBold")
+                     && fullName (disp).contains ("Barlow")   && fullName (disp).contains ("Condensed")
+                     && fullName (disp).contains ("ExtraBold") && fullName (disp).contains ("Italic");
         check (ok, "Embedded fonts load: Inter Regular, Inter SemiBold, Barlow Condensed",
                (describe (regular) + " " + describe (semi) + " " + describe (disp)).toStdString());
     }
