@@ -36,6 +36,7 @@ expect () {
         echo "  PASS  $name (checker said: $([ $code -eq 0 ] && echo OK || echo REJECTED))"
     else
         echo "  FAIL  $name (expected $want, exit $code)"; sed 's/^/        /' "$work/out.txt"
+        [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=Packaging self-test::$name (expected $want, exit $code)"
         failures=$((failures + 1))
     fi
 }

@@ -1,2 +1,5 @@
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+# Font files and their licence texts must stay byte-identical on every platform
+# (release zips ship the exact OFL texts; see tools/packaging/check-package.py).
+design/fonts/** -text

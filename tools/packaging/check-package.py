@@ -18,6 +18,7 @@ Usage:
 """
 import argparse
 import hashlib
+import os
 import stat
 import sys
 import zipfile
@@ -81,8 +82,12 @@ def main() -> int:
                 continue
             packaged = z.read(entry)
             original = licence.read_bytes()
+            note = ""
+            if packaged != original and packaged.replace(b"\r\n", b"\n") == original.replace(b"\r\n", b"\n"):
+                note = "; differs only in line endings (CRLF/LF conversion during checkout?)"
             check(packaged == original,
-                  f"{entry} identical to design/fonts/{licence.name} (sha256 {sha256(packaged)[:12]})")
+                  f"{entry} identical to design/fonts/{licence.name} "
+                  f"(zip sha256 {sha256(packaged)[:12]}, repo sha256 {sha256(original)[:12]}{note})")
             text = packaged.decode("utf-8", errors="replace")
             check("SIL OPEN FONT LICENSE Version 1.1" in text and "Copyright" in text,
                   f"{entry} contains the copyright notice and the full SIL OFL 1.1 text")
@@ -100,6 +105,8 @@ def main() -> int:
         print(f"  PASS  {message}")
     for message in failures:
         print(f"  FAIL  {message}")
+        if os.environ.get("GITHUB_ACTIONS"):
+            print(f"::error title=Package check {args.zip.name}::{message}")
     print("Package OK." if not failures else f"{len(failures)} packaging check(s) failed.")
     return 0 if not failures else 1
 
