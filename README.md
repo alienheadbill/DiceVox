@@ -56,18 +56,6 @@ you're already current, it says so and does nothing.
 Tests for the updater: `powershell -File tools/updater/Test-Updater.ps1`
 (they also run on Windows in CI after each release).
 
-## Build without installing anything (GitHub)
-
-Push this folder to a GitHub repo. The workflow in `.github/workflows/build.yml`
-builds Windows and macOS VST3s on every push and runs the tests.
-
-- Every push to `main` refreshes the **Latest build** release. Download it from
-  the **Releases** box on the right side of the repo's main page.
-- To make a permanent version, push a tag: `git tag v0.2.0 && git push --tags`.
-
-Note: macOS builds are unsigned, so Mac users will get a security warning until
-the plugin is code-signed and notarized (needed before a public release).
-
 ## Project layout
 
 ```
