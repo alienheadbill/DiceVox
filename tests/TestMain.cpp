@@ -332,14 +332,18 @@ int main()
 
     {
         // Embedded fonts load, so the UI looks identical on every computer.
+        // Platforms split "family" and "style" differently (e.g. Windows may
+        // report "Inter SemiBold" as the family), so match on the family text.
+        auto describe = [] (const juce::Typeface::Ptr& t)
+        {
+            return t == nullptr ? juce::String ("null") : "[" + t->getName() + " | " + t->getStyle() + "]";
+        };
         auto regular = ahe::fonts::uiRegular(), semi = ahe::fonts::uiSemiBold(), disp = ahe::fonts::display();
         const bool ok = regular != nullptr && semi != nullptr && disp != nullptr
-                     && regular->getName() == "Inter" && semi->getName() == "Inter"
+                     && regular->getName().startsWith ("Inter") && semi->getName().startsWith ("Inter")
                      && disp->getName().startsWith ("Barlow Condensed");
-        check (ok, "Embedded fonts load (Inter Regular/SemiBold, Barlow Condensed)",
-               (regular != nullptr ? regular->getName() + " " + regular->getStyle() : juce::String ("null")).toStdString() + ", "
-               + (semi != nullptr ? semi->getName() + " " + semi->getStyle() : juce::String ("null")).toStdString() + ", "
-               + (disp != nullptr ? disp->getName() + " " + disp->getStyle() : juce::String ("null")).toStdString());
+        check (ok, "Embedded fonts load: Inter Regular, Inter SemiBold, Barlow Condensed",
+               (describe (regular) + " " + describe (semi) + " " + describe (disp)).toStdString());
     }
 
     std::cout << (failures == 0 ? "All tests passed.\n" : std::to_string (failures) + " test(s) failed.\n");
