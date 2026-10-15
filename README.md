@@ -79,6 +79,8 @@ design/assets/        approved brand SVGs, compiled into the plug-in
 design/fonts/         OFL fonts + licences, compiled into the plug-in (see its README)
 tests/TestMain.cpp    offline audio, compatibility and editor-wiring tests (no DAW needed)
 tools/snapshots/      renders the editor to PNGs for design review (optional)
+tools/packaging/      stages release zips (DiceVox.vst3/ + licenses/) and checks them
+tools/updater/        one-click Windows updater
 ```
 
 ### UI review screenshots

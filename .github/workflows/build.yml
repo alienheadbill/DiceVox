@@ -1,8 +1,12 @@
 name: Build DiceVox
 
 # Builds the VST3 for Windows and macOS on every push and runs the offline tests.
+#  - Every run (any branch): builds the release zips and checks them (package job),
+#    so a feature branch gets a full packaging dry run without publishing anything.
 #  - Push to main      -> refreshes the "Latest build" release on the repo's main page
 #  - Push a tag v0.2.0 -> creates a permanent "v0.2.0" release
+# Every zip contains DiceVox.vst3/ at its root plus licenses/ with the SIL OFL texts
+# of the fonts embedded in the plug-in (Issue #4).
 on:
   push:
     branches: [main]
@@ -45,23 +49,24 @@ jobs:
         run: |
           if [ -f build/Release/DiceVoxTests.exe ]; then build/Release/DiceVoxTests.exe; else build/DiceVoxTests; fi
 
+      - name: Stage package (DiceVox.vst3 + font licences)
+        shell: bash
+        run: tools/packaging/stage-package.sh build/DiceVox_artefacts/Release/VST3 package
+
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: DiceVox-${{ matrix.name }}-VST3
-          # Upload the parent folder so the zip contains DiceVox.vst3/ itself,
-          # ready to drop into C:\Program Files\Common Files\VST3
-          path: build/DiceVox_artefacts/Release/VST3/
+          # Same layout as the release zip: DiceVox.vst3/ (ready to drop into
+          # C:\Program Files\Common Files\VST3) + licenses/ (font licence texts).
+          path: package/
 
-  release:
-    name: Publish release
+  package:
+    # Builds the exact zips a release would publish and checks them. Runs on every
+    # branch (a dry run off main); the release job only publishes zips that passed.
+    name: Package + check release zips
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v4
@@ -70,17 +75,46 @@ jobs:
         with:
           path: dist
 
-      - name: Zip plugins (DiceVox.vst3 folder at the top of each zip)
+      - name: Zip plugins (DiceVox.vst3/ + licenses/ at the top of each zip)
         shell: bash
         run: |
           # Artifact downloads drop file permissions; restore the Mac binary's execute bit.
           chmod +x dist/DiceVox-macOS-VST3/DiceVox.vst3/Contents/MacOS/* || true
+          mkdir -p release
           for os in Windows macOS; do
-            (cd "dist/DiceVox-$os-VST3" && zip -qr "$GITHUB_WORKSPACE/DiceVox-$os.zip" DiceVox.vst3)
+            (cd "dist/DiceVox-$os-VST3" && zip -qr "$GITHUB_WORKSPACE/release/DiceVox-$os.zip" DiceVox.vst3 licenses)
           done
           # One-click updater for Windows (download once; it updates DiceVox from then on)
-          (cd tools/updater && zip -q "$GITHUB_WORKSPACE/AHE-Updater-Windows.zip" Update-DiceVox.cmd Update-DiceVox.ps1)
-          ls -l *.zip
+          (cd tools/updater && zip -q "$GITHUB_WORKSPACE/release/AHE-Updater-Windows.zip" Update-DiceVox.cmd Update-DiceVox.ps1)
+          ls -l release
+
+      - name: Check packages (layout, binaries, unmodified OFL notices, no raw fonts)
+        shell: bash
+        run: |
+          tools/packaging/test-check-package.sh
+          python3 tools/packaging/check-package.py release/DiceVox-Windows.zip --platform windows
+          python3 tools/packaging/check-package.py release/DiceVox-macOS.zip --platform macos
+
+      - name: Upload release zips (checked)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiceVox-release-zips
+          path: release/
+
+  release:
+    name: Publish release
+    needs: package
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: DiceVox-release-zips
 
       - name: Publish
         shell: bash
@@ -94,7 +128,10 @@ jobs:
           C:\Program Files\Common Files\VST3, then in FL Studio use Options > Manage plugins > Find more plugins.
 
           **Install (Mac):** unzip DiceVox-macOS.zip and copy DiceVox.vst3 into ~/Library/Audio/Plug-Ins/VST3.
-          This build is unsigned, so macOS may block it the first time."
+          This build is unsigned, so macOS may block it the first time.
+
+          **Licences:** DiceVox embeds the Inter and Barlow Condensed fonts (SIL Open Font License 1.1).
+          Their licence texts are in the licenses/ folder of each DiceVox zip."
 
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             gh release create "$GITHUB_REF_NAME" DiceVox-*.zip AHE-Updater-Windows.zip -R "$GITHUB_REPOSITORY" \

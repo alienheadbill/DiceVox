@@ -17,7 +17,7 @@ Visual design source for AHE Audio plug-ins, starting with DiceVox. Originally a
 | `assets/ahe-alien-icon.svg` | Primary mark (alien head) | Yes, embedded: plug-in header |
 | `assets/ahe-ufo-icon.svg` | Secondary motif (UFO) | Yes, embedded: ROLL area (single muted tone until the randomizer exists) |
 | `assets/ahe-alien-horizontal.svg` | Full lockup: alien + AHE + "AUDIO" | Only its AHE letter **shapes** are drawn (compact header maker mark). The full lockup is for installers, splash screens and marketing. Its "AUDIO" is live SVG text, which JUCE does not render. |
-| `fonts/` | Inter (Regular, SemiBold) + Barlow Condensed ExtraBold Italic, SIL OFL 1.1, with licence texts | Yes, embedded. Their licence texts must ship with every distributed build (Issue #4; see `fonts/README.md`). |
+| `fonts/` | Inter (Regular, SemiBold) + Barlow Condensed ExtraBold Italic, SIL OFL 1.1, with licence texts | Yes, embedded. Their licence texts ship in every zip under `licenses/` (see `fonts/README.md`). |
 | `review/ui-milestone-01/` | Before/after screenshots from UI milestone 01 | No, review evidence only |
 | `claude-implementation-notes.md` | Original hand-off notes for UI milestone 01 (historical) | No |
 

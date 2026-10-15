@@ -11,5 +11,6 @@ Embedded in the plug-in (via `juce_add_binary_data`) so the UI renders identical
 ## Licence notes
 - The OFL allows embedding these fonts in commercial software, including software that is sold.
 - The files are **unmodified** (not subset or renamed), so the Reserved Font Name rules don't apply.
-- **Release requirement:** when distributing the plug-in, include the OFL text (`Inter-OFL.txt`, `BarlowCondensed-OFL.txt`) with it, for example in the release zip or installer, or in an About/credits screen. This is still **to do** before sharing builds publicly. The current CI release zips contain only the `.vst3`.
+- **Distribution:** every DiceVox zip (Windows and macOS, both the CI test artifacts and the release zips) contains `licenses/Inter-OFL.txt` and `licenses/BarlowCondensed-OFL.txt` next to `DiceVox.vst3/`. Staging is done by `tools/packaging/stage-package.sh`. `tools/packaging/check-package.py` blocks publishing unless both texts are present and byte-identical to these files, and no raw font files are in the zip. The font files themselves are only distributed inside the plug-in binary.
+- **Adding a font:** put its `.ttf` and its licence text, named `<Family>-OFL.txt`, in this folder. Staging and the check pick up every `*-OFL.txt` automatically.
 - The fonts must not be sold on their own.
