@@ -1,26 +1,29 @@
-# AHE Audio — DiceVox design references (review branch)
+# AHE Audio — design references
 
-**Purpose:** Visual design source for a UI-only update to the existing JUCE plug-in.
+Visual design source for AHE Audio plug-ins, starting with DiceVox. Originally added as review-only references in PR #2. Merged into the UI branch (PR #3) so the code and its design sources live together.
 
 - **Company:** Alien Head Entertainment
 - **Software imprint:** AHE Audio
 - **Product:** DiceVox
-- **Approach:** Balanced-hybrid *modern digital* studio UX + restrained alien identity.
-- **Primary brand mark:** simplified alien head; **secondary:** UFO motif.
+- **Approach:** balanced-hybrid *modern digital* studio UX with a restrained alien identity.
+- **Primary brand mark:** simplified alien head. **Secondary:** UFO motif.
 - **Control philosophy:** accessible to a new artist, precise enough for an engineer.
-- **Not code:** These SVGs/tokens describe a proposed appearance. They do not define DSP features or certify other DAW support.
 
-## What exists in `main`
+## What's here
 
-JUCE 8 / VST3 + Standalone; existing APVTS Input, Mix, Output, Bypass controls; disabled ROLL; empty FX module chain; Phase 1 passthrough. Do not portray ROLL, presets, effect racks, or meters as working until implemented.
+| Path | What it is | Used by the plug-in? |
+|---|---|---|
+| `ahe-ui-tokens.json` | Colours, spacing, radii, typography, logo usage (v0.2) | Yes. `Source/ahe/AHETheme.h` mirrors it; keep the two in sync. |
+| `assets/ahe-alien-icon.svg` | Primary mark (alien head) | Yes, embedded: plug-in header |
+| `assets/ahe-ufo-icon.svg` | Secondary motif (UFO) | Yes, embedded: ROLL area (single muted tone until the randomizer exists) |
+| `assets/ahe-alien-horizontal.svg` | Full lockup: alien + AHE + "AUDIO" | Only its AHE letter **shapes** are drawn (compact header maker mark). The full lockup is for installers, splash screens and marketing. Its "AUDIO" is live SVG text, which JUCE does not render. |
+| `fonts/` | Inter (Regular, SemiBold) + Barlow Condensed ExtraBold Italic, SIL OFL 1.1, with licence texts | Yes, embedded. Their licence texts must ship with every distributed build (Issue #4; see `fonts/README.md`). |
+| `review/ui-milestone-01/` | Before/after screenshots from UI milestone 01 | No, review evidence only |
+| `claude-implementation-notes.md` | Original hand-off notes for UI milestone 01 (historical) | No |
 
-## Start here
-
-1. Read [issue #1](https://github.com/alienheadbill/DiceVox/issues/1) for Claude's scoped UI implementation assignment.
-2. Inspect `Source/PluginEditor.cpp`, `Source/PluginEditor.h` and current `520×360` layout.
-3. Inspect `ahe-ui-tokens.json` and `assets/`. SVGs are working logo vectors; compare against founder-approved visual previews before declaring final.
-4. For implementation, use a fresh branch from **current main** rather than coding on this reference branch. Create a **draft PR**. No main changes without founder approval.
-
-**Protect these:** the AHE/`Ahen`/`Dvox` identity, global parameter IDs `input_gain`, `mix`, `output_gain`, `bypass`, saved state, DSP, tests and release workflow.
-
-**Status:** review-only brand references. This pull request should be reviewed separately from any JUCE UI implementation.
+## Rules
+- These files describe appearance. They don't define DSP features or certify DAW support.
+- Never show ROLL, presets, effect racks or meters as working until they are implemented.
+- Green means processing is actually on. Never use it decoratively, and never rely on colour alone to show state.
+- **Protect:** the AHE / `Ahen` / `Dvox` identity, the parameter IDs `input_gain`, `mix`, `output_gain`, `bypass`, saved state, DSP, tests and the release workflow.
+- When changing a brand SVG, change it here once. There is a single copy of each asset.

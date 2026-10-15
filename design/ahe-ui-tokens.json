@@ -1,7 +1,7 @@
 {
   "name": "AHE Audio Design Tokens",
-  "version": "0.1-design-reference",
-  "status": "proposed style, approved direction",
+  "version": "0.2",
+  "status": "approved direction; v0.2 adds typography and maker-mark usage from UI milestone 01 (PR #3)",
   "colors": {
     "brandPurple": "#8F32C7",
     "alienGreen": "#52BE29",
@@ -43,6 +43,26 @@
   "logos": {
     "primary": "assets/ahe-alien-horizontal.svg",
     "small": "assets/ahe-alien-icon.svg",
-    "secondary": "assets/ahe-ufo-icon.svg"
+    "secondary": "assets/ahe-ufo-icon.svg",
+    "headerMakerMark": "compact one-line maker mark: AHE letter shapes from assets/ahe-alien-horizontal.svg + \"AUDIO\" in Inter SemiBold; the full stacked lockup is for installers, splash and marketing only"
+  },
+  "typography": {
+    "embedded": true,
+    "ui": {
+      "family": "Inter",
+      "styles": [
+        "Regular",
+        "SemiBold"
+      ],
+      "use": "labels, values, body text, tooltips"
+    },
+    "display": {
+      "family": "Barlow Condensed",
+      "styles": [
+        "ExtraBold Italic"
+      ],
+      "use": "product names only (e.g. DICEVOX, ROLL)"
+    },
+    "license": "SIL Open Font License 1.1; files and licence texts in design/fonts/; licence texts must ship with every distributed build"
   }
 }

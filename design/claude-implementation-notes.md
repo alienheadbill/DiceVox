@@ -1,5 +1,7 @@
 # Claude handoff — UI milestone 01
 
+> **Status:** completed in PR #3 (UI milestone 01). Kept for history; see `design/README.md` for the current state.
+
 Task: [GitHub Issue #1](https://github.com/alienheadbill/DiceVox/issues/1)
 
 ## First action

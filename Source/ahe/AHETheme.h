@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 // AHE Audio design tokens (shared by every AHE plug-in).
 //
-// Source of truth: design/ahe-ui-tokens.json (v0.1-design-reference).
+// Source of truth: design/ahe-ui-tokens.json (v0.2).
 // Keep this file in sync with that JSON; plug-ins read colours, spacing and
 // font roles from here instead of hard-coding them.
 //
