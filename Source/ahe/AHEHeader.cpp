@@ -8,7 +8,7 @@ namespace ahe
     Header::Header (juce::String name)
         : productName (std::move (name)),
           alienMark (brand::alienIcon()),
-          makerMark (brand::lockup())
+          wordmark (brand::wordmark())
     {
         setTitle ("AHE Audio " + productName);
         setDescription ("Plug-in header: " + productName + " by AHE Audio, a division of Alien Head Entertainment");
@@ -23,14 +23,21 @@ namespace ahe
                                                                                        getHeight() - space::m);
         area.removeFromLeft (space::s);
 
-        const juce::Font nameFont (font::display (22.0f));
+        const juce::Font nameFont (font::display (27.0f));
         const int nameW = juce::GlyphArrangement::getStringWidthInt (nameFont, productName.toUpperCase()) + 6;
         nameArea = area.removeFromLeft (nameW);
 
-        // Lockup SVG is 476x186; keep its aspect ratio.
-        const int makerH = getHeight() - space::m;
-        makerArea = area.removeFromRight (juce::roundToInt ((float) makerH * 476.0f / 186.0f))
-                        .withSizeKeepingCentre (juce::roundToInt ((float) makerH * 476.0f / 186.0f), makerH);
+        // Compact maker mark: AHE letters (aspect from the artwork) + "AUDIO".
+        float wordmarkW = 0.0f;
+        if (wordmark != nullptr)
+        {
+            const auto b = wordmark->getDrawableBounds();
+            wordmarkW = b.getHeight() > 0.0f ? wordmarkHeight * b.getWidth() / b.getHeight() : 0.0f;
+        }
+        const juce::Font audioFont (font::label (audioTextSize).withKerningFactor (0.22f));
+        const float audioW = (float) juce::GlyphArrangement::getStringWidth (audioFont, "AUDIO");
+        const int makerW = (int) std::ceil (wordmarkW + makerGap + audioW);
+        makerArea = area.removeFromRight (makerW).withSizeKeepingCentre (makerW, (int) wordmarkHeight + 2);
 
         centreArea = area.reduced (space::m, 0);
     }
@@ -47,10 +54,21 @@ namespace ahe
             alienMark->drawWithin (g, markArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
 
         g.setColour (colour::textPrimary);
-        g.setFont (juce::Font (font::display (22.0f)));
+        g.setFont (juce::Font (font::display (27.0f)));
         g.drawText (productName.toUpperCase(), nameArea, juce::Justification::centredLeft, false);
 
-        if (makerMark != nullptr)
-            makerMark->drawWithin (g, makerArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        // Maker mark: [AHE] AUDIO
+        auto maker = makerArea.toFloat();
+        if (wordmark != nullptr)
+        {
+            const auto b = wordmark->getDrawableBounds();
+            const float w = wordmarkHeight * b.getWidth() / b.getHeight();
+            wordmark->drawWithin (g, maker.removeFromLeft (w).withSizeKeepingCentre (w, wordmarkHeight),
+                                  juce::RectanglePlacement::centred, 1.0f);
+            maker.removeFromLeft (makerGap);
+        }
+        g.setColour (colour::textPrimary);
+        g.setFont (juce::Font (font::label (audioTextSize).withKerningFactor (0.22f)));
+        g.drawText ("AUDIO", maker.toNearestInt(), juce::Justification::centredLeft, false);
     }
 }

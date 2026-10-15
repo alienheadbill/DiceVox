@@ -5,78 +5,6 @@ namespace ahe::brand
 {
     namespace
     {
-        // JUCE's SVG reader does not size <text> elements written like the ones in
-        // our lockup (font-size as an attribute, letter-spacing, text-anchor), so
-        // the text comes out with height 0 and is invisible. Until the approved
-        // assets ship with text converted to outlines, re-apply each <text>
-        // element's own attributes from the SVG source to the parsed DrawableText.
-        // This only restores what the SVG specifies; it does not restyle the mark.
-        void applySvgTextAttributes (juce::Drawable& drawable, const juce::XmlElement& svg)
-        {
-            juce::Array<juce::DrawableText*> parsed;
-            std::function<void (juce::Component&)> collect = [&] (juce::Component& c)
-            {
-                if (auto* t = dynamic_cast<juce::DrawableText*> (&c))
-                    parsed.add (t);
-                for (auto* child : c.getChildren())
-                    collect (*child);
-            };
-            collect (drawable);
-
-            juce::Array<const juce::XmlElement*> sources;
-            std::function<void (const juce::XmlElement&)> find = [&] (const juce::XmlElement& e)
-            {
-                if (e.hasTagName ("text"))
-                    sources.add (&e);
-                for (auto* child : e.getChildIterator())
-                    find (*child);
-            };
-            find (svg);
-
-            if (parsed.size() != sources.size())
-                return;   // unexpected structure: leave the drawable untouched
-
-            static const auto availableFonts = juce::Font::findAllTypefaceNames();
-
-            for (int i = 0; i < parsed.size(); ++i)
-            {
-                const auto& e = *sources[i];
-                auto& text = *parsed[i];
-
-                const float x       = (float) e.getDoubleAttribute ("x");
-                const float y       = (float) e.getDoubleAttribute ("y");
-                const float size    = (float) e.getDoubleAttribute ("font-size", 16.0);
-                const float spacing = (float) e.getDoubleAttribute ("letter-spacing", 0.0);
-                const int   weight  = e.getIntAttribute ("font-weight", 400);
-                const auto  anchor  = e.getStringAttribute ("text-anchor", "start");
-
-                // First family from the SVG's list that is installed (e.g. "Inter,Arial,sans-serif").
-                juce::String family;
-                for (auto name : juce::StringArray::fromTokens (e.getStringAttribute ("font-family"), ",", "\"'"))
-                    if (availableFonts.contains (name.trim(), true)) { family = name.trim(); break; }
-
-                auto options = juce::FontOptions (size, weight >= 600 ? juce::Font::bold : juce::Font::plain)
-                                   .withKerningFactor (spacing / size);
-                if (family.isNotEmpty())
-                    options = options.withName (family);
-
-                const juce::Font font (options);
-                text.setFont (font, true);
-                text.setFontHeight (size);
-                text.setFontHorizontalScale (1.0f);
-
-                // Box from the baseline (y) up by the ascent; x is the anchor point.
-                const float width = (float) juce::GlyphArrangement::getStringWidth (font, text.getText()) + spacing;
-                const float left  = anchor == "middle" ? x - width * 0.5f
-                                  : anchor == "end"    ? x - width
-                                                       : x;
-                const juce::Rectangle<float> box (left, y - font.getAscent(), width, font.getHeight());
-
-                text.setBoundingBox (juce::Parallelogram<float> (box));
-                text.setJustification (juce::Justification::centredLeft);
-            }
-        }
-
         std::unique_ptr<juce::Drawable> load (const char* data, int size)
         {
             const juce::String source = juce::String::createStringFromData (data, size);
@@ -84,11 +12,7 @@ namespace ahe::brand
             if (svg == nullptr)
                 return nullptr;
 
-            auto drawable = juce::Drawable::createFromSVG (*svg);
-            if (drawable != nullptr)
-                applySvgTextAttributes (*drawable, *svg);
-
-            return drawable;
+            return juce::Drawable::createFromSVG (*svg);
         }
     }
 
@@ -102,9 +26,34 @@ namespace ahe::brand
         return load (AHEBrandData::aheufoicon_svg, AHEBrandData::aheufoicon_svgSize);
     }
 
-    std::unique_ptr<juce::Drawable> lockup()
+    std::unique_ptr<juce::Drawable> wordmark()
     {
-        return load (AHEBrandData::ahealienhorizontal_svg, AHEBrandData::ahealienhorizontal_svgSize);
+        // The AHE letters inside the approved lockup are the <g> that holds the
+        // purple-filled letter paths. Build a drawable from that group alone, so
+        // the compact maker mark uses the real artwork rather than retyped text.
+        const auto source = juce::String::createStringFromData (AHEBrandData::ahealienhorizontal_svg,
+                                                               AHEBrandData::ahealienhorizontal_svgSize);
+        auto svg = juce::XmlDocument::parse (source);
+        if (svg == nullptr)
+            return nullptr;
+
+        for (auto* group : svg->getChildWithTagNameIterator ("g"))
+        {
+            bool holdsLetters = false;
+            for (auto* inner : group->getChildWithTagNameIterator ("g"))
+                holdsLetters |= inner->getStringAttribute ("fill").equalsIgnoreCase ("#8F32C7");
+
+            if (! holdsLetters)
+                continue;
+
+            juce::XmlElement root ("svg");
+            root.setAttribute ("xmlns", "http://www.w3.org/2000/svg");
+            root.setAttribute ("viewBox", svg->getStringAttribute ("viewBox"));
+            root.addChildElement (new juce::XmlElement (*group));
+            return juce::Drawable::createFromSVG (root);
+        }
+
+        return nullptr;
     }
 
     void makeMonochrome (juce::Drawable& mark, juce::Colour tone)

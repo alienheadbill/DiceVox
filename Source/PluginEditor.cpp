@@ -17,8 +17,9 @@ DiceVoxEditor::DiceVoxEditor (DiceVoxProcessor& p)
     tooltips.setLookAndFeel (&lookAndFeel);
 
     // Compact 520x360 by default; optional resize up to 150% with a fixed aspect
-    // ratio. The size is not saved with the project (that would change the
-    // plug-in state format, which is out of scope for this milestone).
+    // ratio. PROVISIONAL until verified as a VST3 in FL Studio on Windows.
+    // The size is not saved with the project (that would change the plug-in
+    // state format, which is out of scope for this milestone).
     setResizable (true, true);
     setResizeLimits (designWidth, designHeight,
                      juce::roundToInt (designWidth * maxScale), juce::roundToInt (designHeight * maxScale));
@@ -71,6 +72,7 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
     quickTab.setTooltip ("Quick view: the main controls.");
     quickTab.setTitle ("Quick view (selected)");
 
+    // Development-only badge: the shipping UI must not show phase labels.
     advancedTab.getProperties().set ("ahe.badge", "PHASE 5");
     advancedTab.setEnabled (false);
     advancedTab.setTooltip ("Advanced view (every effect setting) arrives in Phase 5.");

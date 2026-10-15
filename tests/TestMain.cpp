@@ -5,6 +5,7 @@
 #include "PluginProcessor.h"
 #include "Params.h"
 #include "ahe/AHEBrandMarks.h"
+#include "ahe/AHEFonts.h"
 #include "ui/RollChamber.h"
 
 #include <cmath>
@@ -299,30 +300,46 @@ int main()
         check (rollFound && ! rollHasButton, "ROLL chamber is shown but not clickable (randomizer is Phase 3)");
         check (advancedDisabled, "ADVANCED tab is disabled (Phase 5)");
 
+        // At the minimum (520x360) size the tabs must keep their full width and
+        // stay clear of the product name and maker mark.
+        juce::Rectangle<int> quickR, advancedR;
+        visit (*editor, [&] (juce::Component& c)
+        {
+            if (auto* b = dynamic_cast<juce::TextButton*> (&c))
+            {
+                if (b->getButtonText() == "QUICK")    quickR    = b->getBoundsInParent();
+                if (b->getButtonText() == "ADVANCED") advancedR = b->getBoundsInParent();
+            }
+        });
+        check (quickR.getWidth() >= 64 && advancedR.getWidth() >= 140 && ! quickR.intersects (advancedR)
+                   && advancedR.getRight() <= 520 - 16 - 90,
+               "QUICK / ADVANCED tabs are not crowded at minimum size",
+               "QUICK " + quickR.toString().toStdString() + ", ADVANCED " + advancedR.toString().toStdString());
+
         check (editor->getWidth() == 520 && editor->getHeight() == 360, "Editor opens at compact 520x360",
                std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight()));
     }
     {
-        // Brand marks load from embedded SVGs; the lockup's "AUDIO" text is visible (non-zero size).
+        // Brand marks load from embedded SVGs, including the compact AHE wordmark
+        // (vector shapes from the lockup, wider than tall).
         auto icon = ahe::brand::alienIcon();
         auto ufo  = ahe::brand::ufoIcon();
-        auto lock = ahe::brand::lockup();
+        auto word = ahe::brand::wordmark();
+        const bool wordOk = word != nullptr && word->getDrawableBounds().getWidth() > word->getDrawableBounds().getHeight() * 2.0f;
+        check (icon != nullptr && ufo != nullptr && wordOk,
+               "Brand marks load from embedded SVGs (incl. compact AHE wordmark)");
+    }
 
-        float audioHeight = 0.0f;
-        if (lock != nullptr)
-        {
-            std::function<void (juce::Component&)> find = [&] (juce::Component& c)
-            {
-                if (auto* t = dynamic_cast<juce::DrawableText*> (&c))
-                    if (t->getText() == "AUDIO")
-                        audioHeight = t->getBoundingBox().getBoundingBox().getHeight();
-                for (auto* ch : c.getChildren()) find (*ch);
-            };
-            find (*lock);
-        }
-        check (icon != nullptr && ufo != nullptr && lock != nullptr, "Brand marks load from embedded SVGs");
-        check (audioHeight > 1.0f, "Lockup 'AUDIO' text renders (SVG text attributes applied)",
-               "height " + std::to_string (audioHeight));
+    {
+        // Embedded fonts load, so the UI looks identical on every computer.
+        auto regular = ahe::fonts::uiRegular(), semi = ahe::fonts::uiSemiBold(), disp = ahe::fonts::display();
+        const bool ok = regular != nullptr && semi != nullptr && disp != nullptr
+                     && regular->getName() == "Inter" && semi->getName() == "Inter"
+                     && disp->getName().startsWith ("Barlow Condensed");
+        check (ok, "Embedded fonts load (Inter Regular/SemiBold, Barlow Condensed)",
+               (regular != nullptr ? regular->getName() + " " + regular->getStyle() : juce::String ("null")).toStdString() + ", "
+               + (semi != nullptr ? semi->getName() + " " + semi->getStyle() : juce::String ("null")).toStdString() + ", "
+               + (disp != nullptr ? disp->getName() + " " + disp->getStyle() : juce::String ("null")).toStdString());
     }
 
     std::cout << (failures == 0 ? "All tests passed.\n" : std::to_string (failures) + " test(s) failed.\n");

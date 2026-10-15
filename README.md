@@ -80,13 +80,15 @@ Source/
     FxChain.*         owns the effects, gives each an on/off switch, runs them in order
   ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
     AHETheme.h        design tokens: colours, spacing, radii, font roles
+    AHEFonts.*        embedded Inter + Barlow Condensed (identical text on every computer)
     AHELookAndFeel.*  knob / button / tab / switch / tooltip styling, focus-visible rings
-    AHEBrandMarks.*   alien, UFO and AHE AUDIO marks from the embedded SVGs
+    AHEBrandMarks.*   alien, UFO and compact AHE wordmark from the embedded SVGs
     AHEHeader.*       shared header bar (mark, product name, maker mark)
     AHEKnob.*         labelled knob bound to one parameter (units, reset, typing)
   ui/
     RollChamber.*     DiceVox ROLL hero area (shown as unavailable until Phase 3)
 design/assets/        approved brand SVGs, compiled into the plug-in
+design/fonts/         OFL fonts + licences, compiled into the plug-in (see its README)
 tests/TestMain.cpp    offline audio, compatibility and editor-wiring tests (no DAW needed)
 tools/snapshots/      renders the editor to PNGs for design review (optional)
 ```

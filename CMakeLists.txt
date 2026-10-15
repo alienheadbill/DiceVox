@@ -42,6 +42,7 @@ target_sources(DiceVox PRIVATE
     Source/Params.cpp
     Source/modules/FxChain.cpp
     # Shared AHE Audio UI layer (candidate for the future ahe-core repo)
+    Source/ahe/AHEFonts.cpp
     Source/ahe/AHELookAndFeel.cpp
     Source/ahe/AHEBrandMarks.cpp
     Source/ahe/AHEHeader.cpp
@@ -49,15 +50,18 @@ target_sources(DiceVox PRIVATE
     # DiceVox-specific UI
     Source/ui/RollChamber.cpp)
 
-# Approved AHE Audio brand vectors (design/assets), compiled into the plug-in.
-# No files are read from disk or the network at runtime.
+# Approved AHE Audio brand vectors (design/assets) and OFL fonts (design/fonts),
+# compiled into the plug-in. No files are read from disk or the network at runtime.
 juce_add_binary_data(AHEBrandData
     HEADER_NAME AHEBrandData.h
     NAMESPACE   AHEBrandData
     SOURCES
         design/assets/ahe-alien-icon.svg
         design/assets/ahe-ufo-icon.svg
-        design/assets/ahe-alien-horizontal.svg)
+        design/assets/ahe-alien-horizontal.svg
+        design/fonts/Inter-Regular.ttf
+        design/fonts/Inter-SemiBold.ttf
+        design/fonts/BarlowCondensed-ExtraBoldItalic.ttf)
 
 target_include_directories(DiceVox PRIVATE Source)
 

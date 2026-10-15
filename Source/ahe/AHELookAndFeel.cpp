@@ -284,6 +284,14 @@ namespace ahe
 
     // ------------------------------------------------- labels and tooltips
 
+    juce::Typeface::Ptr LookAndFeel::getTypefaceForFont (const juce::Font& f)
+    {
+        if (f.getTypefaceName() == juce::Font::getDefaultSansSerifFontName())
+            return f.isBold() ? fonts::uiSemiBold() : fonts::uiRegular();
+
+        return LookAndFeel_V4::getTypefaceForFont (f);
+    }
+
     juce::Font LookAndFeel::getLabelFont (juce::Label& l)
     {
         return l.getFont();

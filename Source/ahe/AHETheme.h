@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "AHEFonts.h"
 
 // ---------------------------------------------------------------------------
 // AHE Audio design tokens (shared by every AHE plug-in).
@@ -44,32 +45,32 @@ namespace ahe::theme
         inline constexpr float small = 9.0f, card = 14.0f, hero = 20.0f;
     }
 
-    // Font roles. No font files are embedded yet (pending founder approval),
-    // so these use the platform UI font: Segoe UI on Windows, SF/Helvetica on
-    // macOS. Swap the typeface here once licensed fonts are approved.
+    // Font roles, using the embedded AHE typefaces (see AHEFonts.h), so text
+    // looks identical on every computer.
     namespace font
     {
-        // Product names only (e.g. "DICEVOX"): heavy, italic, slightly condensed.
+        // Product names only (e.g. "DICEVOX"): Barlow Condensed ExtraBold Italic.
         inline juce::FontOptions display (float size)
         {
-            return juce::FontOptions (size, juce::Font::bold | juce::Font::italic).withHorizontalScale (0.92f);
+            return juce::FontOptions (ahe::fonts::display()).withHeight (size);
         }
 
-        // Section labels ("INPUT", "QUICK"): small caps-style, tracked.
+        // Section labels ("INPUT", "QUICK"): Inter SemiBold, tracked.
         inline juce::FontOptions label (float size = 11.0f)
         {
-            return juce::FontOptions (size, juce::Font::bold).withKerningFactor (0.08f);
+            return juce::FontOptions (ahe::fonts::uiSemiBold()).withHeight (size).withKerningFactor (0.08f);
         }
 
-        // Values and body text: plain, highly legible.
+        // Body text: Inter Regular.
         inline juce::FontOptions body (float size = 13.0f)
         {
-            return juce::FontOptions (size);
+            return juce::FontOptions (ahe::fonts::uiRegular()).withHeight (size);
         }
 
+        // Values and read-outs: Inter SemiBold.
         inline juce::FontOptions value (float size = 13.0f)
         {
-            return juce::FontOptions (size, juce::Font::bold);
+            return juce::FontOptions (ahe::fonts::uiSemiBold()).withHeight (size);
         }
     }
 

@@ -37,6 +37,10 @@ namespace ahe
         void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool isHighlighted, bool isDown) override;
         juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
 
+        // Any text drawn with JUCE's default font (typed values, tooltips, menus)
+        // uses the embedded Inter instead of the system font.
+        juce::Typeface::Ptr getTypefaceForFont (const juce::Font&) override;
+
         // Labels, tooltips, resizer
         juce::Font getLabelFont (juce::Label&) override;
         juce::Rectangle<int> getTooltipBounds (const juce::String& tipText, juce::Point<int> screenPos,
