@@ -61,12 +61,34 @@ Tests for the updater: `powershell -File tools/updater/Test-Updater.ps1`
 ```
 Source/
   PluginProcessor.*   audio engine: input gain → dry tap → FxChain → mix → output gain
-  PluginEditor.*      UI
+  PluginEditor.*      DiceVox editor layout (520x360 design canvas, scales to 150%)
   Params.*            global parameter IDs + full parameter layout
   modules/
     EffectModule.h    interface every effect implements
     FxChain.*         owns the effects, gives each an on/off switch, runs them in order
-tests/TestMain.cpp    offline audio tests (no DAW needed)
+  ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
+    AHETheme.h        design tokens: colours, spacing, radii, font roles
+    AHEFonts.*        embedded Inter + Barlow Condensed (identical text on every computer)
+    AHELookAndFeel.*  knob / button / tab / switch / tooltip styling, focus-visible rings
+    AHEBrandMarks.*   alien, UFO and compact AHE wordmark from the embedded SVGs
+    AHEHeader.*       shared header bar (mark, product name, maker mark)
+    AHEKnob.*         labelled knob bound to one parameter (units, reset, typing)
+  ui/
+    RollChamber.*     DiceVox ROLL hero area (shown as unavailable until Phase 3)
+design/assets/        approved brand SVGs, compiled into the plug-in
+design/fonts/         OFL fonts + licences, compiled into the plug-in (see its README)
+tests/TestMain.cpp    offline audio, compatibility and editor-wiring tests (no DAW needed)
+tools/snapshots/      renders the editor to PNGs for design review (optional)
+tools/packaging/      stages release zips (DiceVox.vst3/ + licenses/) and checks them
+tools/updater/        one-click Windows updater
+```
+
+### UI review screenshots
+
+```bash
+cmake -B build -DDICEVOX_BUILD_SNAPSHOTS=ON
+cmake --build build --target DiceVoxSnapshots
+./build/DiceVoxSnapshots shots     # on Linux: run under xvfb + a window manager
 ```
 
 ### Adding an effect (Phase 2 onward)

@@ -40,7 +40,28 @@ target_sources(DiceVox PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/Params.cpp
-    Source/modules/FxChain.cpp)
+    Source/modules/FxChain.cpp
+    # Shared AHE Audio UI layer (candidate for the future ahe-core repo)
+    Source/ahe/AHEFonts.cpp
+    Source/ahe/AHELookAndFeel.cpp
+    Source/ahe/AHEBrandMarks.cpp
+    Source/ahe/AHEHeader.cpp
+    Source/ahe/AHEKnob.cpp
+    # DiceVox-specific UI
+    Source/ui/RollChamber.cpp)
+
+# Approved AHE Audio brand vectors (design/assets) and OFL fonts (design/fonts),
+# compiled into the plug-in. No files are read from disk or the network at runtime.
+juce_add_binary_data(AHEBrandData
+    HEADER_NAME AHEBrandData.h
+    NAMESPACE   AHEBrandData
+    SOURCES
+        design/assets/ahe-alien-icon.svg
+        design/assets/ahe-ufo-icon.svg
+        design/assets/ahe-alien-horizontal.svg
+        design/fonts/Inter-Regular.ttf
+        design/fonts/Inter-SemiBold.ttf
+        design/fonts/BarlowCondensed-ExtraBoldItalic.ttf)
 
 target_include_directories(DiceVox PRIVATE Source)
 
@@ -52,6 +73,7 @@ target_compile_definitions(DiceVox PUBLIC
 
 target_link_libraries(DiceVox
     PRIVATE
+        AHEBrandData
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -71,4 +93,17 @@ if(DICEVOX_BUILD_TESTS)
     target_compile_definitions(DiceVoxTests PRIVATE
         $<TARGET_PROPERTY:DiceVox,COMPILE_DEFINITIONS>)
     target_link_libraries(DiceVoxTests PRIVATE DiceVox)
+endif()
+
+# ---------------------------------------------------------------------------
+# UI snapshot tool (design review only, off by default; not used by CI)
+# ---------------------------------------------------------------------------
+option(DICEVOX_BUILD_SNAPSHOTS "Build the editor-to-PNG snapshot tool" OFF)
+if(DICEVOX_BUILD_SNAPSHOTS)
+    add_executable(DiceVoxSnapshots tools/snapshots/SnapshotMain.cpp)
+    target_include_directories(DiceVoxSnapshots PRIVATE
+        Source $<TARGET_PROPERTY:DiceVox,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(DiceVoxSnapshots PRIVATE
+        $<TARGET_PROPERTY:DiceVox,COMPILE_DEFINITIONS>)
+    target_link_libraries(DiceVoxSnapshots PRIVATE DiceVox)
 endif()

@@ -4,8 +4,12 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
 #include "Params.h"
+#include "ahe/AHEBrandMarks.h"
+#include "ahe/AHEFonts.h"
+#include "ui/RollChamber.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 
 namespace
@@ -21,7 +25,13 @@ namespace
         std::cout << (ok ? "  PASS  " : "  FAIL  ") << name;
         if (! detail.empty()) std::cout << "  (" << detail << ")";
         std::cout << "\n";
-        if (! ok) ++failures;
+        if (! ok)
+        {
+            ++failures;
+            // In GitHub Actions, surface the failure as an annotation (readable without the full log).
+            if (std::getenv ("GITHUB_ACTIONS") != nullptr)
+                std::cout << "::error title=" << name << "::" << detail << "\n";
+        }
     }
 
     void setParam (DiceVoxProcessor& p, const juce::String& id, float realValue)
@@ -163,6 +173,181 @@ int main()
         DiceVoxProcessor p;
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
         check (editor != nullptr && editor->getWidth() > 0, "Editor window opens");
+    }
+
+    // ---------------------------------------------------------------------
+    // Compatibility guards: the UI work must not change what hosts/projects see
+    // ---------------------------------------------------------------------
+    {
+        DiceVoxProcessor p;
+        juce::StringArray ids;
+        for (auto* param : p.getParameters())
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
+                ids.add (ranged->getParameterID());
+        check (ids.joinIntoString (",") == "input_gain,output_gain,mix,bypass",
+               "Parameter IDs and order unchanged", ids.joinIntoString (",").toStdString());
+    }
+    {
+        // Default state captured from main (281c9f6) before the UI work. Structure
+        // (root tag, parameter IDs, attributes, order) must match exactly; values
+        // are compared numerically because float formatting differs by platform
+        // (Apple Silicon stores the 0 dB default as ~3.6e-7, an inaudible rounding
+        // difference in the unchanged parameter code).
+        DiceVoxProcessor p;
+        auto xml = p.state.copyState().createXml();
+
+        struct Expected { const char* id; double value; };
+        const Expected expected[] = { { "bypass", 0.0 }, { "input_gain", 0.0 }, { "mix", 100.0 }, { "output_gain", 0.0 } };
+
+        bool ok = xml != nullptr && xml->getTagName() == "DiceVoxState" && xml->getNumChildElements() == 4;
+        juce::String detail = xml != nullptr ? xml->toString (juce::XmlElement::TextFormat().singleLine().withoutHeader()) : "no xml";
+
+        for (int i = 0; ok && i < 4; ++i)
+        {
+            auto* e = xml->getChildElement (i);
+            ok = e->getTagName() == "PARAM"
+              && e->getNumAttributes() == 2
+              && e->getStringAttribute ("id") == expected[i].id
+              && std::abs (e->getDoubleAttribute ("value") - expected[i].value) < 1.0e-4;
+        }
+        check (ok, "Saved-state format unchanged (matches main)", detail.toStdString());
+    }
+
+    // ---------------------------------------------------------------------
+    // Editor: every restyled control is still wired to its parameter
+    // ---------------------------------------------------------------------
+    {
+        std::function<juce::Component* (juce::Component&, const juce::String&)> findById =
+            [&] (juce::Component& root, const juce::String& id) -> juce::Component*
+        {
+            for (auto* child : root.getChildren())
+            {
+                if (child->getComponentID() == id) return child;
+                if (auto* hit = findById (*child, id)) return hit;
+            }
+            return nullptr;
+        };
+
+        DiceVoxProcessor p;
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+        auto value = [&] (const char* id) { return p.state.getRawParameterValue (id)->load(); };
+
+        struct KnobCase { const char* id; double uiValue; const char* unit; };
+        for (auto kc : { KnobCase { ParamIDs::inputGain, -7.5, " dB" },
+                         KnobCase { ParamIDs::mix, 35.0, " %" },
+                         KnobCase { ParamIDs::outputGain, 4.2, " dB" } })
+        {
+            auto* slider = dynamic_cast<juce::Slider*> (findById (*editor, kc.id));
+            if (slider == nullptr)
+            {
+                check (false, std::string ("Knob for ") + kc.id + " exists");
+                continue;
+            }
+
+            // UI -> parameter
+            slider->setValue (kc.uiValue, juce::sendNotificationSync);
+            const bool uiToParam = std::abs (value (kc.id) - (float) kc.uiValue) < 0.051f;
+
+            // Host automation -> UI
+            auto* param = p.state.getParameter (kc.id);
+            param->setValueNotifyingHost (param->convertTo0to1 (param->convertFrom0to1 (param->getDefaultValue())));
+            const bool paramToUi = std::abs (slider->getValue() - (double) param->convertFrom0to1 (param->getDefaultValue())) < 0.051;
+
+            // Units shown, typed values with the unit are understood, double-click resets to default
+            const bool unitShown = slider->getTextFromValue (slider->getValue()).endsWith (kc.unit);
+            const bool typedOk   = std::abs (slider->getValueFromText ("3.0" + juce::String (kc.unit)) - 3.0) < 0.051;
+            const bool resetOk   = slider->isDoubleClickReturnEnabled()
+                                && std::abs (slider->getDoubleClickReturnValue() - (double) param->convertFrom0to1 (param->getDefaultValue())) < 1.0e-6;
+
+            check (uiToParam && paramToUi && unitShown && typedOk && resetOk,
+                   std::string ("Knob '") + kc.id + "' drives its parameter, follows automation, shows units, resets on double-click",
+                   "ui->param " + std::to_string (uiToParam) + ", param->ui " + std::to_string (paramToUi)
+                       + ", unit " + std::to_string (unitShown) + ", typed " + std::to_string (typedOk)
+                       + ", reset " + std::to_string (resetOk));
+        }
+
+        auto* bypass = dynamic_cast<juce::Button*> (findById (*editor, ParamIDs::bypass));
+        bool bypassOk = false;
+        if (bypass != nullptr)
+        {
+            bypass->setToggleState (true, juce::sendNotificationSync);
+            const bool on = value (ParamIDs::bypass) > 0.5f;
+            p.state.getParameter (ParamIDs::bypass)->setValueNotifyingHost (0.0f);
+            bypassOk = on && ! bypass->getToggleState();
+        }
+        check (bypassOk, "Bypass switch drives the bypass parameter and follows automation");
+    }
+    {
+        // ROLL must not be clickable/enabled-looking in Phase 1; ADVANCED tab is disabled.
+        DiceVoxProcessor p;
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+
+        std::function<void (juce::Component&, std::function<void (juce::Component&)>)> visit =
+            [&] (juce::Component& c, std::function<void (juce::Component&)> fn) { fn (c); for (auto* ch : c.getChildren()) visit (*ch, fn); };
+
+        bool rollFound = false, rollHasButton = false, advancedDisabled = false;
+        visit (*editor, [&] (juce::Component& c)
+        {
+            if (auto* roll = dynamic_cast<RollChamber*> (&c))
+            {
+                rollFound = true;
+                visit (*roll, [&] (juce::Component& inner) { rollHasButton |= dynamic_cast<juce::Button*> (&inner) != nullptr; });
+            }
+            if (auto* b = dynamic_cast<juce::TextButton*> (&c))
+                if (b->getButtonText() == "ADVANCED")
+                    advancedDisabled = ! b->isEnabled();
+        });
+        check (rollFound && ! rollHasButton, "ROLL chamber is shown but not clickable (randomizer is Phase 3)");
+        check (advancedDisabled, "ADVANCED tab is disabled (Phase 5)");
+
+        // At the minimum (520x360) size the tabs must keep their full width and
+        // stay clear of the product name and maker mark.
+        juce::Rectangle<int> quickR, advancedR;
+        visit (*editor, [&] (juce::Component& c)
+        {
+            if (auto* b = dynamic_cast<juce::TextButton*> (&c))
+            {
+                if (b->getButtonText() == "QUICK")    quickR    = b->getBoundsInParent();
+                if (b->getButtonText() == "ADVANCED") advancedR = b->getBoundsInParent();
+            }
+        });
+        check (quickR.getWidth() >= 64 && advancedR.getWidth() >= 140 && ! quickR.intersects (advancedR)
+                   && advancedR.getRight() <= 520 - 16 - 90,
+               "QUICK / ADVANCED tabs are not crowded at minimum size",
+               "QUICK " + quickR.toString().toStdString() + ", ADVANCED " + advancedR.toString().toStdString());
+
+        check (editor->getWidth() == 520 && editor->getHeight() == 360, "Editor opens at compact 520x360",
+               std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight()));
+    }
+    {
+        // Brand marks load from embedded SVGs, including the compact AHE wordmark
+        // (vector shapes from the lockup, wider than tall).
+        auto icon = ahe::brand::alienIcon();
+        auto ufo  = ahe::brand::ufoIcon();
+        auto word = ahe::brand::wordmark();
+        const bool wordOk = word != nullptr && word->getDrawableBounds().getWidth() > word->getDrawableBounds().getHeight() * 2.0f;
+        check (icon != nullptr && ufo != nullptr && wordOk,
+               "Brand marks load from embedded SVGs (incl. compact AHE wordmark)");
+    }
+
+    {
+        // Embedded fonts load, so the UI looks identical on every computer.
+        // Platforms split "family" and "style" differently (Windows reports
+        // family "Barlow", style "Condensed ExtraBold Italic"), so check the
+        // combined family + style text.
+        auto describe = [] (const juce::Typeface::Ptr& t)
+        {
+            return t == nullptr ? juce::String ("null") : "[" + t->getName() + " | " + t->getStyle() + "]";
+        };
+        auto regular = ahe::fonts::uiRegular(), semi = ahe::fonts::uiSemiBold(), disp = ahe::fonts::display();
+        auto fullName = [] (const juce::Typeface::Ptr& t) { return t->getName() + " " + t->getStyle(); };
+        const bool ok = regular != nullptr && semi != nullptr && disp != nullptr
+                     && fullName (regular).contains ("Inter") && fullName (regular).contains ("Regular")
+                     && fullName (semi).contains ("Inter")    && fullName (semi).contains ("SemiBold")
+                     && fullName (disp).contains ("Barlow")   && fullName (disp).contains ("Condensed")
+                     && fullName (disp).contains ("ExtraBold") && fullName (disp).contains ("Italic");
+        check (ok, "Embedded fonts load: Inter Regular, Inter SemiBold, Barlow Condensed",
+               (describe (regular) + " " + describe (semi) + " " + describe (disp)).toStdString());
     }
 
     std::cout << (failures == 0 ? "All tests passed.\n" : std::to_string (failures) + " test(s) failed.\n");
