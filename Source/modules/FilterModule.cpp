@@ -1,4 +1,5 @@
 #include "FilterModule.h"
+#include "FilterQTable.h"
 
 namespace
 {
@@ -16,6 +17,27 @@ float FilterModule::resonanceToQ (float percent)
 {
     const float r = juce::jlimit (0.0f, 1.0f, percent / 100.0f);
     return minQ * std::pow (maxQ / minQ, r);
+}
+
+float FilterModule::stageQ (float resonancePercent, float lowCutFreq, float highCutFreq, double rate)
+{
+    using namespace FilterQTable;
+
+    // Spacing between the cutoffs in octaves, on the prewarped frequencies the
+    // TPT filters really use, so the table's bound is exact at any sample rate.
+    const auto prewarp = [rate] (float hz) { return std::tan (juce::MathConstants<double>::pi * hz / rate); };
+    const auto octaves = (float) std::log2 (prewarp (highCutFreq) / prewarp (lowCutFreq));
+
+    // Bilinear interpolation (continuous, so the limit never steps or clicks).
+    const float res = juce::jlimit (0.0f, 100.0f, resonancePercent);
+    const float fo  = juce::jlimit (0.0f, (float) (numOctaves - 1), (octaves - minOctaves) / octaveStep);
+    const float fr  = juce::jlimit (0.0f, (float) (numResonances - 1), res / 100.0f / resonanceStep);
+    const int o0 = juce::jmin ((int) fo, numOctaves - 2), r0 = juce::jmin ((int) fr, numResonances - 2);
+    const float to = fo - (float) o0, tr = fr - (float) r0;
+
+    const auto row = [&] (int r) { return qFraction[r][o0] + to * (qFraction[r][o0 + 1] - qFraction[r][o0]); };
+    const float a = row (r0), b = row (r0 + 1);
+    return resonanceToQ (res) * (a + tr * (b - a));
 }
 
 void FilterModule::addParameters (ParamList& params) const
@@ -58,7 +80,7 @@ void FilterModule::prepare (const juce::dsp::ProcessSpec& spec)
 
     for (auto* s : { &lowCutSmoothed, &highCutSmoothed })
         s->reset (sampleRate, smoothingSeconds);
-    qSmoothed.reset (sampleRate, smoothingSeconds);
+    resonanceSmoothed.reset (sampleRate, smoothingSeconds);
 
     reset();
 }
@@ -69,8 +91,8 @@ void FilterModule::reset()
     setTargetsFromParameters();
     lowCutSmoothed.setCurrentAndTargetValue (lowCutSmoothed.getTargetValue());
     highCutSmoothed.setCurrentAndTargetValue (highCutSmoothed.getTargetValue());
-    qSmoothed.setCurrentAndTargetValue (qSmoothed.getTargetValue());
-    applyCoefficients (lowCutSmoothed.getCurrentValue(), highCutSmoothed.getCurrentValue(), qSmoothed.getCurrentValue());
+    resonanceSmoothed.setCurrentAndTargetValue (resonanceSmoothed.getTargetValue());
+    applyCoefficients (lowCutSmoothed.getCurrentValue(), highCutSmoothed.getCurrentValue(), resonanceSmoothed.getCurrentValue());
 
     lowCut.reset();
     highCut.reset();
@@ -86,11 +108,12 @@ void FilterModule::setTargetsFromParameters()
 {
     lowCutSmoothed.setTargetValue  (clampCutoff (lowCutHz->load()));
     highCutSmoothed.setTargetValue (clampCutoff (highCutHz->load()));
-    qSmoothed.setTargetValue (resonanceToQ (resonancePct->load()));
+    resonanceSmoothed.setTargetValue (juce::jlimit (0.0f, 100.0f, resonancePct->load()));
 }
 
-void FilterModule::applyCoefficients (float lowCutFreq, float highCutFreq, float q)
+void FilterModule::applyCoefficients (float lowCutFreq, float highCutFreq, float resonancePercent)
 {
+    const float q = stageQ (resonancePercent, lowCutFreq, highCutFreq, sampleRate);
     lowCut.setCutoffFrequency (lowCutFreq);
     highCut.setCutoffFrequency (highCutFreq);
     lowCut.setResonance (q);
@@ -101,13 +124,13 @@ void FilterModule::process (const juce::dsp::ProcessContextReplacing<float>& con
 {
     setTargetsFromParameters();
 
-    const bool smoothing = lowCutSmoothed.isSmoothing() || highCutSmoothed.isSmoothing() || qSmoothed.isSmoothing();
+    const bool smoothing = lowCutSmoothed.isSmoothing() || highCutSmoothed.isSmoothing() || resonanceSmoothed.isSmoothing();
 
     if (! smoothing)
     {
         // Settled: run whole blocks at the target settings (re-applied each block,
-        // which costs two tan() calls and never leaves stale coefficients).
-        applyCoefficients (lowCutSmoothed.getCurrentValue(), highCutSmoothed.getCurrentValue(), qSmoothed.getCurrentValue());
+        // which costs a few tan() calls and never leaves stale coefficients).
+        applyCoefficients (lowCutSmoothed.getCurrentValue(), highCutSmoothed.getCurrentValue(), resonanceSmoothed.getCurrentValue());
         lowCut.process (context);
         highCut.process (context);
         return;
@@ -120,7 +143,7 @@ void FilterModule::process (const juce::dsp::ProcessContextReplacing<float>& con
 
     for (size_t i = 0; i < numSamples; ++i)
     {
-        applyCoefficients (lowCutSmoothed.getNextValue(), highCutSmoothed.getNextValue(), qSmoothed.getNextValue());
+        applyCoefficients (lowCutSmoothed.getNextValue(), highCutSmoothed.getNextValue(), resonanceSmoothed.getNextValue());
 
         for (size_t ch = 0; ch < numChannels; ++ch)
         {

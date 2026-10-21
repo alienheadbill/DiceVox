@@ -171,6 +171,37 @@ namespace
     }
 
     std::string db (float v) { return juce::String (v, 2).toStdString() + " dB"; }
+
+    // Full frequency response (dB per FFT bin) of the plugin at its current
+    // settings: the FFT of its impulse response (settings are applied before
+    // prepare, so nothing is gliding).
+    struct Response { std::vector<float> db; double binHz = 0.0; };
+    Response impulseResponse (DiceVoxProcessor& p, double sr, int numChannels = 2)
+    {
+        constexpr int order = 15, size = 1 << order;
+        juce::AudioBuffer<float> in (numChannels, size);
+        in.clear();
+        for (int ch = 0; ch < numChannels; ++ch)
+            in.setSample (ch, 0, 1.0f);
+        auto out = processAll (p, in, sr);
+
+        std::vector<float> data (2 * size, 0.0f);
+        std::copy (out.getReadPointer (0), out.getReadPointer (0) + size, data.begin());
+        juce::dsp::FFT (order).performFrequencyOnlyForwardTransform (data.data());
+
+        Response r;
+        r.binHz = sr / size;
+        for (int k = 0; k <= size / 2; ++k)
+            r.db.push_back (juce::Decibels::gainToDecibels (data[(size_t) k], -200.0f));
+        return r;
+    }
+
+    // Highest point of one resonant 12 dB/oct stage at this Q (Q / sqrt(1 - 1/(4Q^2))).
+    float singleStagePeakDb (float q)
+    {
+        return q <= FilterModule::minQ + 1.0e-4f ? 0.0f
+                                                 : juce::Decibels::gainToDecibels (q / std::sqrt (1.0f - 1.0f / (4.0f * q * q)));
+    }
 }
 
 int main()
@@ -654,6 +685,135 @@ int main()
                "Filter settings survive save/reload");
     }
 
+    {
+        // Resonance safety (review on PR #7): with the cutoffs close together both
+        // resonant peaks land on the same frequencies and would multiply (Q x Q,
+        // +15.9 dB). Measure the whole response (impulse + FFT) for equal, near,
+        // crossed and wide cutoffs: the combined peak must stay within one stage's
+        // peak at the dialled resonance (+8.14 dB at 100 %).
+        struct Pair { float lowCut, highCut; };
+        const Pair pairs[] = { { 800, 800 }, { 1000, 1000 }, { 1000, 1100 }, { 1000, 1200 }, { 1200, 1000 }, { 1000, 1400 },
+                               { 1000, 2000 }, { 1000, 4000 }, { 300, 3400 }, { 200, 200 }, { 2000, 2000 }, { 2000, 200 },
+                               { 20, 2000 }, { 80, 20000 } };
+        // Optional: DICEVOX_RESPONSE_CSV=<file> writes these measured responses
+        // (log-spaced points) for review charts.
+        auto csvPath = juce::SystemStats::getEnvironmentVariable ("DICEVOX_RESPONSE_CSV", {});
+        std::unique_ptr<juce::FileOutputStream> csv;
+        if (csvPath.isNotEmpty())
+        {
+            juce::File (csvPath).deleteFile();
+            csv = std::make_unique<juce::FileOutputStream> (juce::File (csvPath));
+            *csv << "sample_rate,resonance,low_cut,high_cut,freq_hz,gain_db\n";
+        }
+
+        for (double sr : { 44100.0, 48000.0, 96000.0 })
+        {
+            for (float res : { 100.0f, 50.0f })
+            {
+                const float limit = singleStagePeakDb (FilterModule::resonanceToQ (res));
+                float worst = -100.0f;
+                std::string worstAt;
+                for (auto pr : pairs)
+                {
+                    DiceVoxProcessor p;
+                    setFilter (p, pr.lowCut, pr.highCut, res);
+                    auto r = impulseResponse (p, sr);
+                    const auto k = (size_t) std::distance (r.db.begin(), std::max_element (r.db.begin(), r.db.end()));
+                    const auto pairName = std::to_string ((int) pr.lowCut) + "/" + std::to_string ((int) pr.highCut);
+                    if (r.db[k] > worst) { worst = r.db[k]; worstAt = pairName + " Hz, peak at " + std::to_string ((int) (k * r.binHz)) + " Hz"; }
+
+                    if (csv != nullptr)
+                        for (double f = 20.0; f < sr / 2; f *= 1.01)
+                            *csv << juce::String (sr) << "," << juce::String (res) << "," << juce::String (pr.lowCut) << ","
+                                 << juce::String (pr.highCut) << "," << juce::String (f, 1) << ","
+                                 << juce::String (r.db[(size_t) juce::roundToInt (f / r.binHz)], 3) << "\n";
+                }
+                check (worst <= limit + 0.5f,
+                       "Combined resonance peak capped (" + std::to_string ((int) res) + " %, " + std::to_string ((int) sr) + " Hz, equal/near/crossed cutoffs)",
+                       "highest " + db (worst) + " at " + worstAt + ", limit " + db (limit));
+            }
+        }
+    }
+    for (int channels : { 2, 1 })
+    {
+        // Cutoffs gliding through each other at full resonance (automation or
+        // dice): a sine sitting where they cross must never jump by more than
+        // one stage's peak, and nothing may blow up. Stereo and mono.
+        const auto layoutName = std::string (channels == 2 ? "stereo" : "mono");
+        const float limit = singleStagePeakDb (FilterModule::maxQ);
+        juce::AudioProcessor::BusesLayout layout;
+        layout.inputBuses.add (channels == 2 ? juce::AudioChannelSet::stereo() : juce::AudioChannelSet::mono());
+        layout.outputBuses.add (channels == 2 ? juce::AudioChannelSet::stereo() : juce::AudioChannelSet::mono());
+
+        struct Sweep { const char* name; const char* fixedId; const char* movingId; };
+        for (auto sw : { Sweep { "low cut through high cut", FilterModule::highCutId, FilterModule::lowCutId },
+                         Sweep { "high cut through low cut", FilterModule::lowCutId, FilterModule::highCutId } })
+        {
+            DiceVoxProcessor p;
+            p.setBusesLayout (layout);
+            setFilter (p, 1000.0f, 1000.0f, 100.0f);
+            setParam (p, sw.fixedId, 1000.0f);
+            setParam (p, sw.movingId, 200.0f);
+            const float amp = 0.25f;
+            auto in  = sine (channels, (int) (4.0 * sampleRate), 1000.0, sampleRate, amp);
+            // Moving cutoff: 200 Hz -> 5 kHz -> 200 Hz over 2 s (log), twice.
+            auto out = processAll (p, in, sampleRate, blockSize, {},
+                                   [&] (int b)
+                                   {
+                                       const double t = std::fmod (b * blockSize / sampleRate, 2.0);
+                                       const double pos = t < 1.0 ? t : 2.0 - t;
+                                       setParam (p, sw.movingId, (float) (200.0 * std::pow (25.0, pos)));
+                                   });
+            const float peakDb = juce::Decibels::gainToDecibels (out.getMagnitude (0, out.getNumSamples()) / amp);
+            check (allFinite (out) && peakDb <= limit + 1.0f,
+                   "Sweeping " + std::string (sw.name) + " at full resonance stays within one stage's peak (" + layoutName + ")",
+                   "highest " + db (peakDb) + ", limit " + db (limit));
+        }
+        {
+            // Rapid crossing: the two cutoffs swap places every 40 ms (300 Hz <-> 3 kHz),
+            // noise in, random block sizes. Finite, bounded and click-free.
+            DiceVoxProcessor p;
+            p.setBusesLayout (layout);
+            juce::Random rng (21);
+            auto in  = noise (channels, (int) (3.0 * sampleRate), 0.25f, 31);
+            int sinceSwap = 0, swaps = 0;
+            auto out = processAll (p, in, sampleRate, blockSize,
+                                   [&] (int) { return 64 + rng.nextInt (448); },
+                                   [&] (int b)
+                                   {
+                                       if (b == 0) setFilter (p, 300.0f, 3000.0f, 100.0f);
+                                       if (++sinceSwap * 256 > (int) (0.04 * sampleRate))
+                                       {
+                                           sinceSwap = 0;
+                                           const bool crossed = (++swaps % 2) == 1;
+                                           setParam (p, FilterModule::lowCutId,  crossed ? 3000.0f : 300.0f);
+                                           setParam (p, FilterModule::highCutId, crossed ? 300.0f : 3000.0f);
+                                       }
+                                   });
+            const float peak = out.getMagnitude (0, out.getNumSamples());
+            check (allFinite (out) && peak < 1.0f,
+                   "Cutoffs repeatedly crossing each other stay stable and bounded (" + layoutName + ")",
+                   "peak " + std::to_string (peak) + " for input peak 0.25, " + std::to_string (swaps) + " swaps");
+        }
+    }
+    {
+        // The safety limit moves with the cutoffs, so it glides too: as the low
+        // cut slides up to meet the high cut, the per-stage Q falls smoothly (no
+        // jumps between neighbouring cutoff settings).
+        float largestJump = 0.0f, qFar = 0.0f, qMet = 0.0f;
+        float previous = FilterModule::stageQ (100.0f, 100.0f, 1000.0f, sampleRate);
+        for (float lc = 100.0f; lc <= 1000.0f; lc *= 1.001f)
+        {
+            const float q = FilterModule::stageQ (100.0f, lc, 1000.0f, sampleRate);
+            largestJump = std::max (largestJump, std::abs (q - previous));
+            previous = q;
+        }
+        qFar = FilterModule::stageQ (100.0f, 20.0f, 2000.0f, sampleRate);
+        qMet = FilterModule::stageQ (100.0f, 1000.0f, 1000.0f, sampleRate);
+        check (largestJump < 0.01f && std::abs (qFar - FilterModule::maxQ) < 0.01f && qMet < 0.65f * FilterModule::maxQ,
+               "Per-stage Q is full when cutoffs are far apart and glides down as they meet",
+               "far " + std::to_string (qFar) + ", met " + std::to_string (qMet) + ", largest step " + std::to_string (largestJump));
+    }
     {
         // CPU cost (informational, not a pass/fail): 10 s of stereo audio at 48 kHz
         // with the filter on, settled and while every cutoff is gliding.
