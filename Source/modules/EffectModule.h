@@ -29,6 +29,11 @@ public:
     // Display name shown in the edit panel, e.g. "Delay".
     virtual juce::String getDisplayName() const = 0;
 
+    // juce::ParameterID version hint for this module's parameters (and its
+    // "<id>_on" switch): the release that first shipped the module. Phase 1
+    // parameters are 1; Phase 2 modules use 2. Never lower it after release.
+    virtual int getParameterVersion() const = 0;
+
     // Add this module's parameters (not including its on/off switch).
     virtual void addParameters (ParamList& params) const = 0;
 
