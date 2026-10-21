@@ -6,10 +6,15 @@
 // FxChain
 //
 // Owns every EffectModule and runs the enabled ones in order.
-// Each module automatically gets a "<id>_on" switch parameter.
+// Each module automatically gets a "<id>_on" switch parameter (default off).
 //
-// Phase 1: the chain is empty, so the plugin is a clean passthrough.
-// Phase 2+: modules are registered in the constructor (FxChain.cpp).
+// Switching a module on or off crossfades between its input and output over
+// a few milliseconds, so the switch never clicks. A module that is fully off
+// is not processed at all (the signal passes through untouched), and its
+// memory is cleared before it fades back in.
+//
+// Modules, in signal order (registered in FxChain.cpp):
+//   Phase 2A: filter
 // ---------------------------------------------------------------------------
 class FxChain
 {
@@ -29,9 +34,16 @@ public:
 
     static juce::String enabledParamId (const juce::String& moduleId) { return moduleId + "_on"; }
 
+    static constexpr double switchFadeSeconds = 0.01;
+
 private:
+    void processCrossfading (size_t index, juce::dsp::AudioBlock<float>& block);
+
     std::vector<std::unique_ptr<EffectModule>> modules;
     std::vector<std::atomic<float>*> enabledFlags; // one per module, same order
+    std::vector<juce::SmoothedValue<float>> fades;  // 0 = off, 1 = on, same order
+
+    juce::AudioBuffer<float> scratch; // module output while crossfading
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FxChain)
 };

@@ -41,6 +41,7 @@ target_sources(DiceVox PRIVATE
     Source/PluginEditor.cpp
     Source/Params.cpp
     Source/modules/FxChain.cpp
+    Source/modules/FilterModule.cpp
     # Shared AHE Audio UI layer (candidate for the future ahe-core repo)
     Source/ahe/AHEFonts.cpp
     Source/ahe/AHELookAndFeel.cpp

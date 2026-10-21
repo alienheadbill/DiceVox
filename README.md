@@ -3,8 +3,21 @@
 Vocal multi-effect plugin (VST3). One **ROLL** button generates a new random
 effect chain each click; a separate **Edit panel** exposes every parameter.
 
-Current status: **Phase 1 — passthrough skeleton.** Loads in a DAW, Input / Mix /
-Output / Bypass work, the dice button is a placeholder.
+Current status: **Phase 2A — first effect (filter).** Loads in a DAW, Input / Mix /
+Output / Bypass work, and the filter can be switched on and automated from the
+host's parameter list. There is no on-screen filter control yet (that's the Phase 5
+Edit panel), and the dice button stays a placeholder until Phase 3.
+
+### Effect parameters (host automation)
+
+Every effect is off by default, so it never changes the sound of an existing project.
+
+| ID | Host name | Range | Default |
+|---|---|---|---|
+| `filter_on` | Filter On | off / on | off |
+| `filter_lowcut` | Filter Low Cut | 20 – 2000 Hz (12 dB/oct high-pass) | 80 Hz |
+| `filter_highcut` | Filter High Cut | 200 – 20000 Hz (12 dB/oct low-pass) | 20000 Hz |
+| `filter_resonance` | Filter Resonance | 0 – 100 % (peak up to about +8 dB at each cutoff) | 0 % |
 
 ## Build on Windows (to load it in FL Studio)
 
@@ -65,7 +78,9 @@ Source/
   Params.*            global parameter IDs + full parameter layout
   modules/
     EffectModule.h    interface every effect implements
-    FxChain.*         owns the effects, gives each an on/off switch, runs them in order
+    FxChain.*         owns the effects, gives each an on/off switch (click-free
+                      crossfade), runs them in order
+    FilterModule.*    Phase 2A: low cut + high cut + resonance
   ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
     AHETheme.h        design tokens: colours, spacing, radii, font roles
     AHEFonts.*        embedded Inter + Barlow Condensed (identical text on every computer)
@@ -95,6 +110,7 @@ cmake --build build --target DiceVoxSnapshots
 
 1. Create `Source/modules/<Name>Module.h/.cpp` implementing `EffectModule`.
    Parameter IDs must start with the module id, e.g. `delay_time`.
+   `getParameterVersion()` returns the release that first ships it (Phase 2 = 2).
 2. Register it in the `FxChain` constructor (`FxChain.cpp`), in signal order.
 3. Add it to `target_sources` in `CMakeLists.txt` and add a test.
 
@@ -103,7 +119,7 @@ cmake --build build --target DiceVoxSnapshots
 | Phase | Scope |
 |---|---|
 | 1 | Skeleton, parameters, passthrough, tests ✅ |
-| 2 | First modules: filter, saturation, synced delay |
+| 2 | First modules: filter (2A ✅ in review), saturation (2B), synced delay (2C) |
 | 3 | Randomizer: archetypes, intensity, per-module locks, roll history, auto gain match |
 | 4 | Remaining modules: pitch shift (+formant), doubler, reverb, reverse/stutter, width, wobble, radio |
 | 5 | Main UI + Edit panel, presets, A/B |
