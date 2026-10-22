@@ -3,6 +3,7 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include "Params.h"
 #include "modules/FilterModule.h"
 #include "modules/DriveModule.h"
@@ -464,13 +465,44 @@ int main()
         DiceVoxProcessor p;
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
 
+        // A control counts as on screen if it and every parent up to the editor
+        // are visible (the editor itself is only shown once a host opens it).
+        auto visibleInTree = [&editor] (juce::Component* c)
+        {
+            if (c == nullptr)
+                return false;
+            for (; c != nullptr && c != editor.get(); c = c->getParentComponent())
+                if (! c->isVisible())
+                    return false;
+            return true;
+        };
+        auto* dvEditor = dynamic_cast<DiceVoxEditor*> (editor.get());
+
+        // Opens on SIMPLE: just the dice, effect cards hidden, compact window.
+        const bool simpleFirst = dvEditor != nullptr && ! dvEditor->isAdvancedView()
+                              && editor->getWidth() == 860 && editor->getHeight() == 280
+                              && ! visibleInTree (findById (*editor, "reverb_on"))
+                              && visibleInTree (findById (*editor, ParamIDs::diceStyle))
+                              && visibleInTree (findById (*editor, ParamIDs::mix));
+        const std::string simpleSize = std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight());
+
+        // ADVANCED: every effect, bigger window, and the choice is saved with the project.
+        if (dvEditor != nullptr)
+            dvEditor->setAdvancedView (true);
+        const bool advancedShown = editor->getWidth() == 860 && editor->getHeight() == 690
+                                && visibleInTree (findById (*editor, "reverb_on"))
+                                && (bool) p.state.state.getProperty (DiceVoxEditor::viewProperty, false);
+        const std::string advancedSize = std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight());
+        check (simpleFirst && advancedShown, "Editor opens on SIMPLE (dice only, 860x280); ADVANCED shows every effect (860x690)",
+               "simple " + simpleSize + ", advanced " + advancedSize);
+
         juce::StringArray missing, unwired;
         for (auto* param : p.getParameters())
         {
             auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
             const auto id = ranged->getParameterID();
             auto* control = findById (*editor, id);
-            if (control == nullptr) { missing.add (id); continue; }
+            if (control == nullptr || ! visibleInTree (control)) { missing.add (id); continue; }
 
             // Host -> UI: move the parameter to the far end of its range and see the control follow.
             ranged->setValueNotifyingHost (1.0f);
@@ -486,11 +518,18 @@ int main()
             if (! follows) unwired.add (id);
             ranged->setValueNotifyingHost (ranged->getDefaultValue());
         }
-        check (missing.isEmpty() && unwired.isEmpty(), "Every parameter has an on-screen control that follows automation",
+        check (missing.isEmpty() && unwired.isEmpty(), "ADVANCED: every parameter has a visible control that follows automation",
                "missing: " + missing.joinIntoString (",").toStdString() + "; not following: " + unwired.joinIntoString (",").toStdString());
 
-        check (editor->getWidth() == 860 && editor->getHeight() == 690, "Editor opens at 860x690",
-               std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight()));
+        // The view is remembered: a new window for this instance opens on ADVANCED,
+        // and switching back to SIMPLE hides the effects again.
+        editor.reset (p.createEditor());
+        auto* reopened = dynamic_cast<DiceVoxEditor*> (editor.get());
+        const bool remembered = reopened != nullptr && reopened->isAdvancedView() && editor->getHeight() == 690;
+        if (reopened != nullptr)
+            reopened->setAdvancedView (false);
+        check (remembered && editor->getHeight() == 280 && ! visibleInTree (findById (*editor, "reverb_on")),
+               "The SIMPLE / ADVANCED choice is remembered and can be switched back");
     }
     {
         // ROLL and BACK work from the screen.

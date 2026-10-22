@@ -55,7 +55,7 @@ void EffectCard::resized()
     auto area = getLocalBounds().reduced (space::s + 2, space::s);
 
     auto top = area.removeFromTop (24);
-    power.setBounds (top.removeFromRight (54));
+    power.setBounds (top.removeFromRight (62)); // wide enough for "OFF" next to its indicator
     top.removeFromRight (space::xs);
     lock.setBounds (top.removeFromRight (24).withSizeKeepingCentre (24, 22));
     top.removeFromRight (space::xs);

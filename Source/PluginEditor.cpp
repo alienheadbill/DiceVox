@@ -17,7 +17,7 @@ using namespace ahe::theme;
 // Editor
 // ============================================================================
 DiceVoxEditor::DiceVoxEditor (DiceVoxProcessor& p)
-    : AudioProcessorEditor (&p), content (p)
+    : AudioProcessorEditor (&p), processorRef (p), content (p)
 {
     // Add children before applying the look-and-feel: setLookAndFeel() makes
     // existing children rebuild their look-and-feel-created parts (e.g. the knob
@@ -26,15 +26,30 @@ DiceVoxEditor::DiceVoxEditor (DiceVoxProcessor& p)
     setLookAndFeel (&lookAndFeel);
     tooltips.setLookAndFeel (&lookAndFeel);
 
-    // 860x690 by default; resizable from 80% (small screens) to 130% with a
-    // fixed aspect ratio. The size is not saved with the project.
+    // Resizable from 80% (small screens) to 130% with a fixed aspect ratio.
+    // The zoom is not saved with the project; the view (SIMPLE / ADVANCED) is.
     setResizable (true, true);
-    setResizeLimits (juce::roundToInt (designWidth * minScale), juce::roundToInt (designHeight * minScale),
-                     juce::roundToInt (designWidth * maxScale), juce::roundToInt (designHeight * maxScale));
-    if (auto* c = getConstrainer())
-        c->setFixedAspectRatio ((double) designWidth / (double) designHeight);
+    content.onViewChosen = [this] (bool advanced) { setAdvancedView (advanced); };
+    setAdvancedView ((bool) p.state.state.getProperty (viewProperty, false));
+}
 
-    setSize (designWidth, designHeight);
+void DiceVoxEditor::setAdvancedView (bool advanced)
+{
+    // Keep the current zoom (100% on first open).
+    const double scale = getWidth() > 0 ? juce::jlimit (minScale, maxScale, (double) getWidth() / designWidth) : 1.0;
+
+    advancedView = advanced;
+    processorRef.state.state.setProperty (viewProperty, advanced, nullptr);
+    content.setAdvanced (advanced);
+
+    const int h = currentDesignHeight();
+    setResizeLimits (juce::roundToInt (designWidth * minScale), juce::roundToInt (h * minScale),
+                     juce::roundToInt (designWidth * maxScale), juce::roundToInt (h * maxScale));
+    if (auto* c = getConstrainer())
+        c->setFixedAspectRatio ((double) designWidth / (double) h);
+
+    setSize (juce::roundToInt (designWidth * scale), juce::roundToInt (h * scale));
+    resized(); // re-lay out even if the host keeps the old size for a moment
 }
 
 DiceVoxEditor::~DiceVoxEditor()
@@ -51,12 +66,12 @@ void DiceVoxEditor::paint (juce::Graphics& g)
 void DiceVoxEditor::resized()
 {
     const float scale = juce::jlimit ((float) minScale, (float) maxScale, (float) getWidth() / (float) designWidth);
-    content.setBounds (0, 0, designWidth, designHeight);
+    content.setBounds (0, 0, designWidth, currentDesignHeight());
     content.setTransform (juce::AffineTransform::scale (scale));
 }
 
 // ============================================================================
-// Content (the 860x690 design canvas)
+// Content (the 860-wide design canvas: 280 tall in SIMPLE, 690 in ADVANCED)
 // ============================================================================
 DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
     : presetBar (p),
@@ -71,6 +86,19 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
     addAndMakeVisible (header);
     addAndMakeVisible (presetBar);
     addAndMakeVisible (roll);
+
+    // View tabs: SIMPLE (just the dice) and ADVANCED (every effect).
+    for (auto* tab : { &simpleTab, &advancedTab })
+    {
+        tab->getProperties().set (roleProperty, role::tab);
+        tab->setClickingTogglesState (false);
+        tab->setWantsKeyboardFocus (true);
+        addAndMakeVisible (*tab);
+    }
+    simpleTab.setTooltip ("Simple: just the dice. Pick a style, choose how wild, hit ROLL.");
+    advancedTab.setTooltip ("Advanced: every effect with its switch, lock and knobs.");
+    simpleTab.onClick   = [this] { if (onViewChosen) onViewChosen (false); };
+    advancedTab.onClick = [this] { if (onViewChosen) onViewChosen (true); };
 
     // Starfield: fixed seed, so it's the same sky every time the window opens.
     juce::Random sky (51);
@@ -150,15 +178,35 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
     bypassSwitch.onStateChange = [this] { bypassSwitch.repaint(); };
 }
 
+void DiceVoxEditor::Content::setAdvanced (bool shouldBeAdvanced)
+{
+    advanced = shouldBeAdvanced;
+    for (auto& card : cards)
+        card->setVisible (advanced);
+
+    simpleTab.setToggleState (! advanced, juce::dontSendNotification);
+    advancedTab.setToggleState (advanced, juce::dontSendNotification);
+    simpleTab.setTitle (advanced ? "Simple view" : "Simple view (selected)");
+    advancedTab.setTitle (advanced ? "Advanced view (selected)" : "Advanced view");
+    resized();
+    repaint();
+}
+
 void DiceVoxEditor::Content::resized()
 {
     auto area = getLocalBounds();
 
     header.setBounds (area.removeFromTop (56));
     {
-        // Preset bar in the header's free centre (between the name and the maker mark).
-        const auto centre = header.getCentreArea().translated (header.getX(), header.getY());
-        presetBar.setBounds (centre.withSizeKeepingCentre (juce::jmin (400, centre.getWidth()), 30));
+        // In the header's free centre (between the name and the maker mark):
+        // the view tabs, then the preset bar.
+        auto centre = header.getCentreArea().translated (header.getX(), header.getY())
+                          .withSizeKeepingCentre (header.getCentreArea().getWidth(), 30);
+        simpleTab.setBounds (centre.removeFromLeft (72));
+        centre.removeFromLeft (space::xs);
+        advancedTab.setBounds (centre.removeFromLeft (92));
+        centre.removeFromLeft (space::m);
+        presetBar.setBounds (centre.withSizeKeepingCentre (juce::jmin (380, centre.getWidth()), 30));
     }
 
     area.reduce (space::l, 0);
@@ -181,6 +229,9 @@ void DiceVoxEditor::Content::resized()
     roll.setBounds (area.removeFromTop (96));
     area.removeFromTop (space::m);
     area.removeFromBottom (space::m);
+
+    if (! advanced)
+        return; // SIMPLE: the effect cards are hidden
 
     // Effect cards, in signal order: two rows of up to five equal cards
     // (a shorter second row is centred).

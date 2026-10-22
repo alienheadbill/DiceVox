@@ -3,6 +3,15 @@
 Vocal multi-effect plugin (VST3). One **ROLL** button generates a new random
 effect chain each click; every effect also has its own on-screen controls.
 
+Two views, chosen with the tabs in the header:
+
+- **SIMPLE:** just the dice (style, LOW / MED / HIGH, ROLL / BACK) plus presets and
+  Bypass / Input / Mix / Output. New instances open here.
+- **ADVANCED:** adds every effect with its switch, lock and knobs. The window grows
+  to fit.
+
+The view is saved with the project.
+
 Current status: **v2 (test build), the alien vocal lab.** Ten effects (Filter, Pitch,
 Drive, Lo-Fi, Alien Voice, Chorus, Chop, Reverse, Delay, Reverb), each with an
 ON/OFF switch, a dice lock and knobs on screen. The look is a starfield, effects
@@ -162,7 +171,7 @@ Tests for the updater: `powershell -File tools/updater/Test-Updater.ps1`
 ```
 Source/
   PluginProcessor.*   audio engine: input gain → dry tap → FxChain → mix → output gain
-  PluginEditor.*      DiceVox editor layout (860x690 design canvas, scales 80%-130%)
+  PluginEditor.*      DiceVox editor: SIMPLE (860x280) / ADVANCED (860x690) views, scales 80%-130%
   Params.*            global parameter IDs + full parameter layout
   modules/
     EffectModule.h    interface every effect implements
