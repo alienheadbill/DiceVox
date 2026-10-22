@@ -1545,6 +1545,35 @@ int main()
         check (spacey >= 35, "Roll names lean into space (Area 51)", std::to_string (spacey) + " of 50 names");
     }
 
+    {
+        // The signal scope follows the output: a loud tone shows near its peak,
+        // then a stretch of silence clears it to zero.
+        DiceVoxProcessor p;
+        p.prepareToPlay (sampleRate, blockSize);
+        juce::MidiBuffer midi;
+        std::vector<float> points ((size_t) DiceVoxProcessor::scopeSize);
+
+        auto tone = sine (2, blockSize * 40, 440.0, sampleRate, 0.5f);
+        for (int pos = 0; pos < tone.getNumSamples(); pos += blockSize)
+        {
+            juce::AudioBuffer<float> view (tone.getArrayOfWritePointers(), 2, pos, blockSize);
+            p.processBlock (view, midi);
+        }
+        p.copyScope (points.data());
+        const float loud = points.back();
+
+        juce::AudioBuffer<float> silence (2, blockSize);
+        for (int b = 0; b < 40; ++b)
+        {
+            silence.clear();
+            p.processBlock (silence, midi);
+        }
+        p.copyScope (points.data());
+        const float quiet = *std::max_element (points.begin(), points.end());
+        check (std::abs (loud - 0.5f) < 0.02f && quiet == 0.0f, "Signal scope shows the output level and clears in silence",
+               "tone " + std::to_string (loud) + ", after silence " + std::to_string (quiet));
+    }
+
     // ---------------------------------------------------------------------
     // Factory presets (Alien Pack)
     // ---------------------------------------------------------------------
@@ -1740,8 +1769,37 @@ int main()
         p.rollDice (rng);
         setParam (p, ParamIDs::diceLock ("reverb"), 1.0f);
 
+        // Play a short phrase so the signal scope has something to show.
+        {
+            auto phrase = sine (2, (int) (0.5 * sampleRate), 220.0, sampleRate, 0.4f);
+            for (int i = 0; i < phrase.getNumSamples(); ++i)
+            {
+                const float env = 0.35f + 0.65f * std::abs (std::sin (juce::MathConstants<float>::pi * 5.0f * (float) i / (float) phrase.getNumSamples()));
+                for (int ch = 0; ch < 2; ++ch)
+                    phrase.setSample (ch, i, phrase.getSample (ch, i) * env);
+            }
+            p.prepareToPlay (sampleRate, blockSize);
+            juce::MidiBuffer midi;
+            for (int pos = 0; pos + blockSize <= phrase.getNumSamples(); pos += blockSize)
+            {
+                juce::AudioBuffer<float> view (phrase.getArrayOfWritePointers(), 2, pos, blockSize);
+                p.processBlock (view, midi);
+            }
+        }
+
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
         auto* dv = dynamic_cast<DiceVoxEditor*> (editor.get());
+        std::function<SignalScope* (juce::Component&)> findScope = [&] (juce::Component& c) -> SignalScope*
+        {
+            if (auto* s = dynamic_cast<SignalScope*> (&c))
+                return s;
+            for (auto* child : c.getChildren())
+                if (auto* hit = findScope (*child))
+                    return hit;
+            return nullptr;
+        };
+        if (auto* scopeView = findScope (*editor))
+            scopeView->refreshNow();
         auto shoot = [&] (const juce::String& name, float scale)
         {
             auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, scale);

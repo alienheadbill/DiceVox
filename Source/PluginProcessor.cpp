@@ -69,7 +69,10 @@ void DiceVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         buffer.clear (ch, 0, buffer.getNumSamples());
 
     if (bypassFlag->load() > 0.5f)
+    {
+        feedScope (buffer); // the scope shows the untouched vocal while bypassed
         return; // TODO (Phase 2+): delay the dry signal by the chain latency while bypassed
+    }
 
     inputGain.setGainDecibels  (inputGainDb->load());
     outputGain.setGainDecibels (outputGainDb->load());
@@ -98,6 +101,38 @@ void DiceVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     chain.process (block);
     dryWet.mixWetSamples (block);
     outputGain.process (context);
+
+    feedScope (buffer);
+}
+
+void DiceVoxProcessor::feedScope (const juce::AudioBuffer<float>& buffer) noexcept
+{
+    // One peak per scopeStep samples into a small ring the editor reads.
+    // Lock-free: relaxed stores per point, the write index published last.
+    const int numChannels = buffer.getNumChannels();
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    {
+        float peak = 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch)
+            peak = juce::jmax (peak, std::abs (buffer.getSample (ch, i)));
+        scopeAccum = juce::jmax (scopeAccum, peak);
+
+        if (++scopeCount >= scopeStep)
+        {
+            const int w = scopeWrite.load (std::memory_order_relaxed);
+            scope[(size_t) w].store (scopeAccum, std::memory_order_relaxed);
+            scopeWrite.store ((w + 1) % scopeSize, std::memory_order_release);
+            scopeAccum = 0.0f;
+            scopeCount = 0;
+        }
+    }
+}
+
+void DiceVoxProcessor::copyScope (float* dest) const noexcept
+{
+    const int start = scopeWrite.load (std::memory_order_acquire); // oldest point
+    for (int i = 0; i < scopeSize; ++i)
+        dest[i] = scope[(size_t) ((start + i) % scopeSize)].load (std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* DiceVoxProcessor::createEditor()

@@ -96,16 +96,21 @@ namespace ahe
 
         // Tick ring: lit between the origin and the value (every fifth tick longer).
         {
-            const int numTicks = radius > 28.0f ? 31 : 21;
+            // Fewer, finer ticks on small knobs so they stay clean.
+            const bool small = radius <= 28.0f;
+            const int numTicks = small ? 11 : 31;
+            const int majorEvery = small ? 5 : 5;
             const float lo = juce::jmin (origin, pos), hi = juce::jmax (origin, pos);
             for (int i = 0; i < numTicks; ++i)
             {
                 const float t = (float) i / (float) (numTicks - 1);
                 const float a = startAngle + t * (endAngle - startAngle);
                 const bool lit = enabled && t >= lo - 1.0e-4f && t <= hi + 1.0e-4f && hi - lo > 1.0e-4f;
-                const float inner = radius - ((i % 5 == 0) ? juce::jmax (3.5f, radius * 0.12f) : juce::jmax (2.0f, radius * 0.07f));
-                g.setColour (lit ? colour::purpleSoft.withAlpha (active ? 1.0f : 0.85f) : colour::border.brighter (0.1f));
-                g.drawLine ({ centre.getPointOnCircumference (inner, a), centre.getPointOnCircumference (radius, a) }, 1.2f);
+                const bool major = i % majorEvery == 0;
+                const float inner = radius - (major ? juce::jmax (3.0f, radius * 0.12f) : juce::jmax (1.8f, radius * 0.06f));
+                g.setColour (lit ? colour::purpleSoft.withAlpha (active ? 1.0f : 0.8f)
+                                 : colour::border.brighter (major ? 0.25f : 0.05f));
+                g.drawLine ({ centre.getPointOnCircumference (inner, a), centre.getPointOnCircumference (radius, a) }, small ? 1.0f : 1.1f);
             }
         }
 

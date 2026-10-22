@@ -60,15 +60,20 @@ void EffectCard::resized()
     lock.setBounds (top.removeFromRight (24).withSizeKeepingCentre (24, 22));
     top.removeFromRight (space::xs);
     titleArea = top;
-    area.removeFromTop (space::xs);
+    area.removeFromTop (space::s);
 
-    // Two knobs per row; a lone last knob is centred.
+    // Two knobs per row; a lone last knob is centred. Every card sizes its
+    // rows as if it had two, so knobs are the same size on every card (a
+    // one-row card centres its row vertically).
     const int numKnobs = (int) knobs.size();
     const int numRows  = (numKnobs + 1) / 2;
     if (numRows == 0)
         return;
 
-    const int rowH = juce::jmin (100, area.getHeight() / numRows);
+    const int rowH = juce::jmin (100, area.getHeight() / 2);
+    if (numRows == 1)
+        area = area.withSizeKeepingCentre (area.getWidth(), rowH);
+
     for (int i = 0; i < numKnobs; i += 2)
     {
         auto row = area.removeFromTop (rowH);
@@ -91,11 +96,12 @@ void EffectCard::paint (juce::Graphics& g)
     const bool on = power.getToggleState();
     const auto area = getLocalBounds().toFloat().reduced (0.5f);
 
-    // A sci-fi module: frosted glass with HUD corner brackets (the starfield
-    // shows faintly through it). When the effect is processing it powers up with
-    // a green rim and a green "power rail" along the top (green = processing on).
+    // A module of frosted glass (the starfield shows faintly through it), kept
+    // calm so the knobs lead. When the effect is processing it powers up with a
+    // green "power rail" along the top, a faint green rim and its LED (green =
+    // processing on). The HUD brackets are reserved for the ROLL panel.
     ahe::LookAndFeel::drawGlass (g, area, radius::card,
-                                 on ? colour::alienGreen.withAlpha (0.7f) : colour::purpleSoft.withAlpha (0.18f), true);
+                                 on ? colour::alienGreen.withAlpha (0.32f) : colour::purpleSoft.withAlpha (0.12f), false);
 
     // Hairline under the title row, fading out at both ends.
     {
@@ -109,16 +115,19 @@ void EffectCard::paint (juce::Graphics& g)
 
     if (on)
     {
-        juce::ColourGradient wash (colour::alienGreen.withAlpha (0.10f), area.getCentreX(), area.getY(),
-                                   colour::alienGreen.withAlpha (0.0f), area.getCentreX(), area.getY() + 60.0f, false);
+        juce::ColourGradient wash (colour::alienGreen.withAlpha (0.06f), area.getCentreX(), area.getY(),
+                                   colour::alienGreen.withAlpha (0.0f), area.getCentreX(), area.getY() + 48.0f, false);
         g.setGradientFill (wash);
         g.fillRoundedRectangle (area.reduced (1.0f), radius::card);
 
-        g.setColour (colour::alienGreen);
-        g.fillRoundedRectangle (area.getX() + radius::card, area.getY() + 1.5f, area.getWidth() - 2.0f * radius::card, 2.0f, 1.0f);
+        juce::ColourGradient rail (colour::alienGreen.withAlpha (0.0f), area.getX() + radius::card, 0.0f,
+                                   colour::alienGreen.withAlpha (0.0f), area.getRight() - radius::card, 0.0f, false);
+        rail.addColour (0.5, colour::alienGreen);
+        g.setGradientFill (rail);
+        g.fillRoundedRectangle (area.getX() + radius::card, area.getY() + 1.0f, area.getWidth() - 2.0f * radius::card, 2.0f, 1.0f);
     }
 
     g.setColour (on ? colour::textPrimary : colour::textSecondary);
-    g.setFont (juce::Font (font::label (11.5f)));
+    g.setFont (juce::Font (font::label (11.0f)));
     g.drawFittedText (title.toUpperCase(), titleArea, juce::Justification::centredLeft, 1, 0.75f);
 }

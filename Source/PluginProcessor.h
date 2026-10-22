@@ -78,6 +78,12 @@ public:
 
     PresetStore presets;
 
+    // ---- Signal scope (audio thread writes, editor reads) -------------------
+    // The output's peak level in scopeSize points, oldest first, each covering
+    // scopeStep samples (about 0.35 s of history at 48 kHz).
+    static constexpr int scopeSize = 256, scopeStep = 64;
+    void copyScope (float* dest) const noexcept;
+
     static constexpr auto rollNameProperty     = "rollName";
     static constexpr auto presetNameProperty   = "presetName";
     static constexpr auto presetFactoryProperty = "presetFactory";
@@ -88,6 +94,12 @@ public:
     juce::AudioProcessorValueTreeState state;
 
 private:
+    void feedScope (const juce::AudioBuffer<float>& buffer) noexcept;
+    std::array<std::atomic<float>, scopeSize> scope {};
+    std::atomic<int> scopeWrite { 0 };
+    float scopeAccum = 0.0f; // audio thread only
+    int scopeCount = 0;      // audio thread only
+
     void pushHistory();
     void applyPreset (const juce::XmlElement& xml, const juce::String& name, bool factory);
 

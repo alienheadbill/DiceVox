@@ -65,7 +65,8 @@ target_sources(DiceVox PRIVATE
     Source/ui/RollChamber.cpp
     Source/ui/EffectCard.cpp
     Source/ui/PresetBar.cpp
-    Source/ui/LevelSelector.cpp)
+    Source/ui/LevelSelector.cpp
+    Source/ui/SignalScope.cpp)
 
 # Approved AHE Audio brand vectors (design/assets) and OFL fonts (design/fonts),
 # compiled into the plug-in. No files are read from disk or the network at runtime.

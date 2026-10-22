@@ -8,6 +8,7 @@
 #include "ui/RollChamber.h"
 #include "ui/EffectCard.h"
 #include "ui/PresetBar.h"
+#include "ui/SignalScope.h"
 
 // ---------------------------------------------------------------------------
 // DiceVox editor.
@@ -67,6 +68,8 @@ private:
         RollChamber roll;
         std::vector<std::unique_ptr<EffectCard>> cards;
         ahe::Knob inputKnob, mixKnob, outputKnob;
+        SignalScope scope;
+        juce::Rectangle<int> versionArea;
         juce::ToggleButton bypassSwitch;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
         juce::Rectangle<int> bottomArea;

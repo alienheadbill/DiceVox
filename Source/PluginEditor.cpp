@@ -81,7 +81,8 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
       mixKnob    (p.state, ParamIDs::mix,        "Mix",
                   "Mix: blend between your original vocal (0%) and the processed sound (100%). Double-click to reset."),
       outputKnob (p.state, ParamIDs::outputGain, "Output",
-                  "Output: final level leaving DiceVox (-24 to +24 dB). Double-click to reset to 0 dB.")
+                  "Output: final level leaving DiceVox (-24 to +24 dB). Double-click to reset to 0 dB."),
+      scope (p)
 {
     addAndMakeVisible (header);
     addAndMakeVisible (presetBar);
@@ -161,6 +162,7 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
 
     for (auto* knob : { &inputKnob, &mixKnob, &outputKnob })
         addAndMakeVisible (*knob);
+    addAndMakeVisible (scope);
 
     // Bypass: ON = bypassed. The switch shows text + an indicator shape for each state.
     bypassSwitch.getProperties().set (roleProperty, role::bypass);
@@ -217,10 +219,17 @@ void DiceVoxEditor::Content::resized()
     // Bottom row: bypass on the left, Input / Mix / Output in the middle
     bottomArea = area.removeFromBottom (96);
     {
-        auto row = bottomArea.withTrimmedTop (space::s).reduced (space::l, 0);
-        bypassSwitch.setBounds (row.removeFromLeft (140).withSizeKeepingCentre (140, 28));
+        // Bypass (with the version under it) | Input / Mix / Output | live scope
+        auto row = bottomArea.withTrimmedTop (space::s).reduced (space::l, space::xs);
+        {
+            auto left = row.removeFromLeft (150);
+            bypassSwitch.setBounds (left.withSizeKeepingCentre (140, 28));
+            versionArea = left.removeFromBottom (14);
+        }
 
-        constexpr int knobW = 100;
+        scope.setBounds (row.removeFromRight (230).reduced (0, space::xs));
+
+        constexpr int knobW = 96;
         auto knobRow = row.withSizeKeepingCentre (3 * knobW, row.getHeight());
         for (auto* knob : { &inputKnob, &mixKnob, &outputKnob })
             knob->setBounds (knobRow.removeFromLeft (knobW));
@@ -292,13 +301,12 @@ void DiceVoxEditor::Content::paint (juce::Graphics& g)
         }
     }
 
-    // Bottom console: a glass strip behind Bypass and Input / Mix / Output.
+    // Bottom console: a calm glass strip behind Bypass, Input / Mix / Output and the scope.
     ahe::LookAndFeel::drawGlass (g, bottomArea.toFloat().withTrimmedTop ((float) space::xs), radius::card,
-                                 colour::purpleSoft.withAlpha (0.18f), true);
+                                 colour::purpleSoft.withAlpha (0.12f), false);
 
-    g.setColour (colour::textMuted);
-    g.setFont (juce::Font (font::label (9.5f)));
-    const auto dot = juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  "));
-    g.drawText (juce::String ("v" JucePlugin_VersionString + dot + "alien vocal lab" + dot + "test build").toUpperCase(),
-                bottomArea.withTrimmedTop (space::s).withTrimmedRight (space::l), juce::Justification::centredRight, false);
+    g.setColour (colour::textMuted.withAlpha (0.8f));
+    g.setFont (juce::Font (font::label (8.5f)));
+    g.drawText (juce::String ("v" JucePlugin_VersionString " test build").toUpperCase(),
+                versionArea, juce::Justification::centred, false);
 }
