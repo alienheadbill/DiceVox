@@ -83,5 +83,6 @@ namespace ahe::theme
         inline const juce::String bypass  { "bypass" };  // processing / bypassed (or on / off) switch
         inline const juce::String primary { "primary" }; // the main creative action (e.g. ROLL)
         inline const juce::String lock    { "lock" };    // small padlock toggle (closed = locked)
+        inline const juce::String segment { "segment" }; // one option of a segmented choice (lit = selected)
     }
 }

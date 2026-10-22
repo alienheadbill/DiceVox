@@ -29,9 +29,8 @@ namespace Params
         chain.addParameters (params);
 
         // Dice controls (v2), after every module.
-        params.push_back (std::make_unique<juce::AudioParameterFloat> (
-            juce::ParameterID { ParamIDs::diceIntensity, 2 }, "Dice Intensity",
-            juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f), 50.0f, pctAttrs));
+        params.push_back (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { ParamIDs::diceLevel, 2 }, "Dice Intensity", DiceRoller::levelNames(), 1));
 
         params.push_back (std::make_unique<juce::AudioParameterChoice> (
             juce::ParameterID { ParamIDs::diceStyle, 2 }, "Dice Style", DiceRoller::styleNames(), 0));

@@ -191,7 +191,7 @@ namespace ahe
                 g.fillRoundedRectangle (area, radius::small);
             }
         }
-        else if (hasRole (b, role::lock))
+        else if (hasRole (b, role::lock) || hasRole (b, role::segment))
         {
             const bool on = b.getToggleState();
             auto fill = on ? colour::brandPurple.withAlpha (0.35f) : colour::raised;
@@ -224,6 +224,8 @@ namespace ahe
     {
         if (hasRole (b, role::primary))
             return juce::Font (font::display (30.0f));
+        if (hasRole (b, role::segment))
+            return juce::Font (font::label (10.0f));
 
         return hasRole (b, role::tab) ? juce::Font (font::label (11.5f)) : juce::Font (font::value (13.0f));
     }

@@ -9,8 +9,8 @@ using namespace ahe::theme;
 
 RollChamber::RollChamber (DiceVoxProcessor& p)
     : processor (p), ufo (ahe::brand::ufoIcon()),
-      intensityKnob (p.state, ParamIDs::diceIntensity, "Intensity",
-                     "Intensity: how far ROLL goes. Low = 1-3 subtle effects, high = 3-5 effects pushed hard.")
+      levelSelector (p.state, ParamIDs::diceLevel, juce::StringArray { "LOW", "MED", "HIGH" },
+                     "How wild ROLL goes. LOW: 1-2 subtle effects. MED: 2-4 effects. HIGH: 3-5 effects pushed hard.")
 {
     rollButton.getProperties().set (roleProperty, role::primary);
     rollButton.setTooltip ("ROLL: build a new random vocal chain in the chosen style. "
@@ -41,8 +41,7 @@ RollChamber::RollChamber (DiceVoxProcessor& p)
     styleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         p.state, ParamIDs::diceStyle, styleBox);
 
-    intensityKnob.setCompact (true);
-    addAndMakeVisible (intensityKnob);
+    addAndMakeVisible (levelSelector);
 
     refresh();
     startTimerHz (8);
@@ -91,12 +90,14 @@ void RollChamber::resized()
     area.removeFromRight (space::m);
     backButton.setBounds (area.removeFromRight (66).withSizeKeepingCentre (66, 32));
     area.removeFromRight (space::m);
-    intensityKnob.setBounds (area.removeFromRight (72));
-    area.removeFromRight (space::s);
     {
-        auto styleArea = area.removeFromRight (150);
-        styleLabelArea = styleArea.removeFromTop (styleArea.getHeight() / 2 - 2).withTrimmedTop (4);
-        styleBox.setBounds (styleArea.removeFromTop (28));
+        // STYLE label, style menu, and the LOW / MED / HIGH row under it.
+        auto column = area.removeFromRight (160);
+        styleLabelArea = column.removeFromTop (14);
+        column.removeFromTop (2);
+        styleBox.setBounds (column.removeFromTop (26));
+        column.removeFromTop (space::xs);
+        levelSelector.setBounds (column.removeFromTop (22));
     }
     area.removeFromRight (space::l);
 
@@ -114,7 +115,7 @@ void RollChamber::paint (juce::Graphics& g)
 
     g.setColour (colour::textSecondary);
     g.setFont (juce::Font (font::label (10.0f)));
-    g.drawText ("STYLE", styleLabelArea, juce::Justification::bottomLeft, false);
+    g.drawText ("STYLE  +  HOW WILD", styleLabelArea, juce::Justification::bottomLeft, false);
 
     auto text = textArea;
     auto titleArea = text.removeFromTop (text.getHeight() * 3 / 5);

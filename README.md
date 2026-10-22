@@ -8,10 +8,15 @@ Chorus, Chop, Reverse, Delay, Reverb), each with an ON/OFF switch, a dice lock a
 knobs on screen. **ROLL** builds a chain with settings that suit vocals and names
 the result ("Dusty Deep Echo Hall"), steered by:
 
-- **Style:** Any Vibe, Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom or
-  Glitch. Each one changes which effects come up and how they're set, and always
-  brings its signature effect (reverb, lo-fi, pitch, lo-fi or chop).
-- **Intensity:** 0 % rolls 1–3 subtle effects, 100 % rolls 3–5 effects pushed hard.
+- **Style:** Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom or Glitch.
+  - **Recipes:** each style has three recipes, and a roll never repeats the last
+    one. For example, Dark Toy Box has "music box", "creepy phone" and "uncanny
+    whisper"; Pitched Rage has "chipmunk", "demon" and "octave stack".
+  - **What a recipe sets:** its two core effects, which extras may join, and how
+    each one is set.
+  - **Any Vibe** borrows recipes from every style, or rolls free-form.
+- **Intensity:** LOW rolls 1–2 effects leaning gentle, MED rolls 2–4, HIGH rolls
+  3–5 leaning wild. Settings range widely on every level.
 - **Locks:** a locked effect keeps its on/off state and settings.
 
 **BACK** returns to the previous roll. Windows gets a one-click installer
@@ -62,7 +67,7 @@ controls); never reorder or remove them after release.
 | `reverse_on` | Reverse On | off / on | off |
 | `reverse_length` | Reverse Length | 1/16, 1/8, 1/4, 1/2 slices (max 1.5 s) | 1/4 |
 | `reverse_mix` | Reverse Mix | 0 – 100 % reversed level (the dry vocal stays at full level) | 40 % |
-| `dice_intensity` | Dice Intensity | 0 – 100 % | 50 % |
+| `dice_level` | Dice Intensity | Low, Medium, High | Medium |
 | `dice_style` | Dice Style | Any Vibe, Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom, Glitch | Any Vibe |
 | `dice_lock_<effect>` | Dice Lock … | off / on, one per effect | off |
 
@@ -164,7 +169,7 @@ Source/
   dsp/
     GrainShifter.*    two-head delay-line pitch shifter (also plays reverse)
   dice/
-    DiceRoller.*      ROLL: styles, intensity, locks, vocal-friendly settings, names
+    DiceRoller.*      ROLL: style recipes, intensity, locks, vocal-friendly settings, names
   presets/
     PresetStore.*     preset files (Documents/AHE Audio/DiceVox/Presets, *.dicevox)
   ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
@@ -176,6 +181,7 @@ Source/
     AHEKnob.*         labelled knob bound to one parameter (units, reset, typing)
   ui/
     RollChamber.*     ROLL / BACK, style, intensity and the current roll's name
+    LevelSelector.*   segmented LOW / MED / HIGH buttons for a choice parameter
     EffectCard.*      one effect on screen: ON/OFF switch, dice lock, knobs
     PresetBar.*       header preset bar: < menu > SAVE
 installer/DiceVox.iss Inno Setup script for DiceVox-Setup.exe (built by CI)

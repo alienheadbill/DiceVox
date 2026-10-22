@@ -10,8 +10,12 @@
 // name for the result, e.g. "Dusty Deep Echo Hall". It is steered by the
 // dice controls (Params.h):
 //
-//   Intensity  0 % = 1-3 subtle effects ... 100 % = 3-5 effects pushed hard.
-//   Style      which effects come up and how they are set (see styleNames()).
+//   Style      each style has three recipes (e.g. Dark Toy Box: music box,
+//              creepy phone, uncanny whisper): two core effects plus extras,
+//              and how to set them. A roll never repeats the last recipe.
+//              Any Vibe borrows recipes from every style, or rolls free-form.
+//   Intensity  LOW = 1-2 effects leaning gentle, MED = 2-4, HIGH = 3-5
+//              leaning wild. Settings range widely on every level.
 //   Locks      a locked effect keeps its on/off state and settings; the dice
 //              only reroll the unlocked ones.
 //
@@ -30,4 +34,10 @@ namespace DiceRoller
 
     // Dice styles, in Style-parameter order. Named after the sound, not artists.
     const juce::StringArray& styleNames();
+
+    // Intensity levels, in Intensity-parameter order: Low, Medium, High.
+    const juce::StringArray& levelNames();
+
+    // How many recipes a style rolls from (Any Vibe: all of them).
+    int numRecipesFor (int style);
 }

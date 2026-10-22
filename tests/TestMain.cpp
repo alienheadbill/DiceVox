@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <set>
 #include <tuple>
 
 namespace
@@ -330,7 +331,7 @@ int main()
                                            "lofi_on,lofi_crush,lofi_wobble,lofi_mix,"
                                            "chop_on,chop_rate,chop_depth,"
                                            "reverse_on,reverse_length,reverse_mix,"
-                                           "dice_intensity,dice_style,"
+                                           "dice_level,dice_style,"
                                            "dice_lock_filter,dice_lock_drive,dice_lock_chorus,dice_lock_delay,dice_lock_reverb,"
                                            "dice_lock_pitch,dice_lock_lofi,dice_lock_chop,dice_lock_reverse",
                "Parameter IDs and order: Phase 1 unchanged, effects and dice controls appended", ids.joinIntoString (",").toStdString());
@@ -357,7 +358,7 @@ int main()
                                       { "lofi_on", 0.0 }, { "lofi_crush", 50.0 }, { "lofi_wobble", 30.0 }, { "lofi_mix", 100.0 },
                                       { "chop_on", 0.0 }, { "chop_rate", 1.0 }, { "chop_depth", 80.0 },
                                       { "reverse_on", 0.0 }, { "reverse_length", 2.0 }, { "reverse_mix", 40.0 },
-                                      { "dice_intensity", 50.0 }, { "dice_style", 0.0 },
+                                      { "dice_level", 1.0 }, { "dice_style", 0.0 },
                                       { "dice_lock_filter", 0.0 }, { "dice_lock_drive", 0.0 }, { "dice_lock_chorus", 0.0 },
                                       { "dice_lock_delay", 0.0 }, { "dice_lock_reverb", 0.0 }, { "dice_lock_pitch", 0.0 },
                                       { "dice_lock_lofi", 0.0 }, { "dice_lock_chop", 0.0 }, { "dice_lock_reverse", 0.0 } };
@@ -475,6 +476,8 @@ int main()
                 follows = b->getToggleState();
             else if (auto* combo = dynamic_cast<juce::ComboBox*> (control))
                 follows = combo->getSelectedItemIndex() == juce::roundToInt (ranged->convertFrom0to1 (1.0f));
+            else if (auto* selector = dynamic_cast<LevelSelector*> (control))
+                follows = selector->getSelectedIndex() == juce::roundToInt (ranged->convertFrom0to1 (1.0f));
             if (! follows) unwired.add (id);
             ranged->setValueNotifyingHost (ranged->getDefaultValue());
         }
@@ -1106,7 +1109,7 @@ int main()
         {
             DiceVoxProcessor p;
             setParam (p, ParamIDs::diceStyle, (float) (seed % 6));
-            setParam (p, ParamIDs::diceIntensity, (float) ((seed * 37) % 101));
+            setParam (p, ParamIDs::diceLevel, (float) ((seed / 6) % 3));
             juce::Random rng (seed);
             p.rollDice (rng);
             auto out = processAll (p, noise (2, (int) (1.5 * sampleRate), 0.3f, seed), sampleRate);
@@ -1294,11 +1297,11 @@ int main()
         setParam (p, ReverbModule::sizeId, 33.0f);
         setParam (p, ParamIDs::diceLock ("reverb"), 1.0f);
         setParam (p, ParamIDs::diceLock ("chop"), 1.0f); // locked off
-        setParam (p, ParamIDs::diceIntensity, 80.0f);
+        setParam (p, ParamIDs::diceLevel, 2.0f);
         setParam (p, ParamIDs::diceStyle, 5.0f);         // Glitch, whose signature effect is Chop
         auto controlsKept = [&]
         {
-            return std::abs (valueOf (p, ParamIDs::diceIntensity) - 80.0f) < 0.5f && std::abs (valueOf (p, ParamIDs::diceStyle) - 5.0f) < 0.5f
+            return std::abs (valueOf (p, ParamIDs::diceLevel) - 2.0f) < 0.5f && std::abs (valueOf (p, ParamIDs::diceStyle) - 5.0f) < 0.5f
                 && valueOf (p, ParamIDs::diceLock ("reverb")) > 0.5f && valueOf (p, ParamIDs::diceLock ("chop")) > 0.5f;
         };
         juce::Random rng (3);
@@ -1314,11 +1317,11 @@ int main()
         check (kept, "Locked effects survive every roll; ROLL and BACK never change the dice controls");
     }
     {
-        // Intensity: 0 % rolls 1-3 effects, 100 % rolls 3-5.
-        auto stats = [&] (float intensity)
+        // Intensity: LOW rolls 1-2 effects, MED 2-4, HIGH 3-5.
+        auto stats = [&] (float level)
         {
             DiceVoxProcessor p;
-            setParam (p, ParamIDs::diceIntensity, intensity);
+            setParam (p, ParamIDs::diceLevel, level);
             juce::Random rng (99);
             int lo = 99, hi = 0;
             double sum = 0.0;
@@ -1335,33 +1338,51 @@ int main()
             return std::make_tuple (lo, hi, sum / 200.0);
         };
         const auto [lowMin, lowMax, lowAvg] = stats (0.0f);
-        const auto [highMin, highMax, highAvg] = stats (100.0f);
-        check (lowMin >= 1 && lowMax <= 3 && highMin >= 3 && highMax <= 5 && highAvg > lowAvg + 1.5,
-               "Intensity sets how many effects a roll uses (low 1-3, high 3-5)",
-               "low " + std::to_string (lowMin) + "-" + std::to_string (lowMax) + " (avg " + std::to_string (lowAvg) + "), high "
-                   + std::to_string (highMin) + "-" + std::to_string (highMax) + " (avg " + std::to_string (highAvg) + ")");
+        const auto [medMin, medMax, medAvg] = stats (1.0f);
+        const auto [highMin, highMax, highAvg] = stats (2.0f);
+        check (lowMin >= 1 && lowMax <= 2 && medMin >= 2 && medMax <= 4 && highMin >= 3 && highMax <= 5
+                   && lowAvg < medAvg && medAvg < highAvg && DiceRoller::levelNames().size() == 3,
+               "Intensity LOW / MED / HIGH sets how many effects a roll uses (1-2, 2-4, 3-5)",
+               "low " + std::to_string (lowMin) + "-" + std::to_string (lowMax) + ", med " + std::to_string (medMin) + "-"
+                   + std::to_string (medMax) + ", high " + std::to_string (highMin) + "-" + std::to_string (highMax));
     }
     {
-        // Every style always brings its signature effect.
-        struct Signature { int style; const char* effectOn; };
-        bool ok = DiceRoller::styleNames().size() == 6;
+        // Each style keeps its character (its recipes' core effects) while rolls
+        // vary a lot: three recipes per style, never the same one twice in a
+        // row, and many different effect combinations.
+        struct Character { int style; const char* a; const char* b; };
+        bool ok = DiceRoller::styleNames().size() == 6 && DiceRoller::numRecipesFor (0) == 15;
         std::string detail;
-        for (auto s : { Signature { 1, "reverb_on" }, Signature { 2, "lofi_on" }, Signature { 3, "pitch_on" },
-                        Signature { 4, "lofi_on" }, Signature { 5, "chop_on" } })
+        for (auto s : { Character { 1, "reverb_on", "chorus_on" }, Character { 2, "lofi_on", "pitch_on" },
+                        Character { 3, "pitch_on", "pitch_on" },   Character { 4, "lofi_on", "lofi_on" },
+                        Character { 5, "chop_on", "reverse_on" } })
         {
             DiceVoxProcessor p;
             setParam (p, ParamIDs::diceStyle, (float) s.style);
             juce::Random rng (s.style * 7);
-            int misses = 0;
+            int misses = 0, repeats = 0, lastRecipe = -2;
+            std::set<std::string> combos, names;
             for (int r = 0; r < 40; ++r)
             {
-                p.rollDice (rng);
-                misses += valueOf (p, s.effectOn) < 0.5f ? 1 : 0;
+                const auto name = p.rollDice (rng);
+                misses += valueOf (p, s.a) < 0.5f && valueOf (p, s.b) < 0.5f ? 1 : 0;
+
+                const int recipe = (int) p.state.state.getProperty ("diceLastRecipe", -1);
+                repeats += recipe == lastRecipe ? 1 : 0;
+                lastRecipe = recipe;
+
+                std::string combo;
+                for (auto* id : allEffects)
+                    combo += valueOf (p, id) > 0.5f ? '1' : '0';
+                combos.insert (combo);
+                names.insert (name.toStdString());
             }
-            ok &= misses == 0;
-            detail += DiceRoller::styleNames()[s.style].toStdString() + ": " + std::to_string (misses) + " misses  ";
+            ok &= misses == 0 && repeats == 0 && combos.size() >= 6 && names.size() >= 8 && DiceRoller::numRecipesFor (s.style) == 3;
+            detail += DiceRoller::styleNames()[s.style].toStdString() + ": " + std::to_string (combos.size()) + " combos, "
+                    + std::to_string (names.size()) + " names, " + std::to_string (misses) + " off-style, "
+                    + std::to_string (repeats) + " repeats  ";
         }
-        check (ok, "Each dice style always includes its signature effect", detail);
+        check (ok, "Each style keeps its character while rolls vary (3 recipes, no repeats, many combinations)", detail);
     }
 
     // ---------------------------------------------------------------------
@@ -1381,7 +1402,7 @@ int main()
         juce::Random rng (21);
         p.rollDice (rng);
         setParam (p, ParamIDs::outputGain, -4.0f);
-        setParam (p, ParamIDs::diceIntensity, 90.0f);
+        setParam (p, ParamIDs::diceLevel, 2.0f);
         const auto rolled = p.getRollName();
         std::vector<float> savedValues;
         for (auto* param : p.getParameters())
@@ -1409,7 +1430,7 @@ int main()
         }
         ok &= mismatch.empty() && p.getRollName() == rolled
            && valueOf (p, ParamIDs::bypass) > 0.5f
-           && std::abs (valueOf (p, ParamIDs::diceIntensity) - 90.0f) < 0.5f;
+           && std::abs (valueOf (p, ParamIDs::diceLevel) - 2.0f) < 0.5f;
 
         ok &= p.undoRoll() && std::abs (valueOf (p, ParamIDs::outputGain) - 6.0f) < 0.05f && p.getPresetName().isEmpty();
         check (ok, "Presets save the whole sound and load it back exactly; BACK undoes a load",

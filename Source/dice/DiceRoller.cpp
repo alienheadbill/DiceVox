@@ -21,31 +21,37 @@ namespace
     // Styles, in Style-parameter order (same order as DiceRoller::styleNames()).
     enum Style { anyVibe, dreamyPop, darkToyBox, pitchedRage, lofiBedroom, glitch, numStyles };
 
-    // How often each style picks each effect (relative weights).
-    constexpr float styleWeights[numStyles][numModules] = {
-        //  filter pitch  drive  lofi   chorus chop   reverse delay reverb
-        {   0.8f,  0.6f,  0.7f,  0.5f,  0.7f,  0.4f,  0.4f,   1.0f, 1.3f }, // Any Vibe
-        {   0.3f,  0.5f,  0.3f,  0.1f,  1.5f,  0.1f,  0.4f,   1.2f, 2.0f }, // Dreamy Pop
-        {   1.4f,  1.4f,  0.4f,  1.5f,  0.6f,  0.3f,  0.8f,   0.6f, 1.2f }, // Dark Toy Box
-        {   0.6f,  2.0f,  1.2f,  0.5f,  0.6f,  1.0f,  0.6f,   1.3f, 0.8f }, // Pitched Rage
-        {   1.2f,  0.3f,  0.8f,  2.0f,  0.8f,  0.3f,  0.5f,   0.8f, 1.0f }, // Lo-Fi Bedroom
-        {   0.8f,  1.2f,  0.4f,  1.0f,  0.4f,  2.0f,  2.0f,   1.0f, 0.6f }, // Glitch
-    };
+    // Intensity, in level order (same order as DiceRoller::levelNames()):
+    // where in each setting's range a roll tends to land, and how many effects.
+    constexpr float levelBias[]    = { 0.1f, 0.5f, 0.9f };
+    constexpr int   levelMinCount[] = { 1, 2, 3 };
+    constexpr int   levelMaxCount[] = { 2, 4, 5 };
 
-    // The one effect each style always brings (unless it is locked), -1 = none.
-    constexpr int styleSignature[numStyles] = { -1, reverb, lofi, pitch, lofi, chop };
+    // Free-form rolls (part of Any Vibe): how often each effect comes up.
+    constexpr float freeFormWeights[numModules] = {
+        //  filter pitch drive lofi chorus chop reverse delay reverb
+            0.8f,  0.6f, 0.7f, 0.5f, 0.7f, 0.4f, 0.4f,  1.0f, 1.3f };
+
+    // Ways to set an effect. "any" = the style's usual mix of options.
+    enum class PitchFeel  { any, octaveDown, octaveUp, octaveEither, harmony, wholeUp, wholeDown, uncanny };
+    enum class DelayFeel  { any, slap, dotted, throwIt, rhythmic };
+    enum class ReverbFeel { any, room, space, hall };
+    enum class LoFiFeel   { any, tape, crush, phone };
+    enum class ChopFeel   { any, fast, groove };
+
+    // Filter shapes (indices used by recipes and styles).
+    enum { telephone, radio, thin, muffled, airy, numFilterShapes };
 
     struct FilterShape { const char* name; float lowCutLo, lowCutHi, highCutLo, highCutHi, resonanceLo, resonanceHi; };
-    constexpr FilterShape filterShapes[] = {
+    constexpr FilterShape filterShapes[numFilterShapes] = {
         { "Telephone", 250.0f,  500.0f, 2500.0f,  4000.0f, 10.0f, 50.0f },
         { "Radio",     500.0f,  900.0f, 3000.0f,  5000.0f, 30.0f, 70.0f },
         { "Thin",      400.0f, 1200.0f, 12000.0f, 20000.0f, 0.0f, 30.0f },
         { "Muffled",    40.0f,  100.0f,  800.0f,  2000.0f,  0.0f, 40.0f },
         { "Airy",      100.0f,  250.0f, 14000.0f, 20000.0f, 0.0f, 15.0f },
     };
-    constexpr int numFilterShapes = (int) std::size (filterShapes);
 
-    // How often each style picks each filter shape.
+    // How often each style picks each filter shape when a recipe doesn't say.
     constexpr float filterShapeWeights[numStyles][numFilterShapes] = {
         // Telephone Radio Thin Muffled Airy
         { 1, 1, 1, 1, 0 }, // Any Vibe
@@ -55,6 +61,62 @@ namespace
         { 1, 0, 0, 3, 0 }, // Lo-Fi Bedroom
         { 1, 1, 1, 0, 0 }, // Glitch
     };
+
+    // A recipe: one recognisable sound within a style. Its two core effects
+    // always come (the first one even on LOW); the extra weights decide which
+    // other effects join at MED / HIGH; the feels say how to set them.
+    struct Recipe
+    {
+        Style style;
+        int core[2];
+        float extraWeights[numModules]; // filter pitch drive lofi chorus chop reverse delay reverb
+        int filterShape;                // -1 = the style's usual shapes
+        PitchFeel pitchFeel;
+        DelayFeel delayFeel;
+        ReverbFeel reverbFeel;
+        LoFiFeel lofiFeel;
+        ChopFeel chopFeel;
+    };
+
+    using PF = PitchFeel;
+    using DF = DelayFeel;
+    using RF = ReverbFeel;
+    using LF = LoFiFeel;
+    using CF = ChopFeel;
+
+    constexpr Recipe recipes[] = {
+        // Dreamy Pop: airy, polished, wide.
+        { dreamyPop, { reverb, chorus }, { 0.6f, 0.8f, 0.3f, 0.0f, 0.0f, 0.0f, 0.3f, 1.0f, 0.0f }, airy, PF::octaveDown,   DF::dotted,   RF::hall,  LF::any,   CF::any },    // airy double
+        { dreamyPop, { reverb, delay },  { 0.5f, 0.3f, 0.2f, 0.0f, 1.0f, 0.0f, 0.4f, 0.0f, 0.0f }, airy, PF::octaveEither, DF::throwIt,  RF::space, LF::any,   CF::any },    // echo throw
+        { dreamyPop, { chorus, pitch },  { 0.4f, 0.0f, 0.3f, 0.0f, 0.0f, 0.0f, 0.3f, 0.8f, 1.5f }, thin, PF::octaveUp,     DF::dotted,   RF::hall,  LF::any,   CF::any },    // glossy stack
+
+        // Dark Toy Box: creepy-cute, crunchy, eerie.
+        { darkToyBox, { lofi, pitch },   { 0.5f, 0.0f, 0.2f, 0.0f, 0.4f, 0.2f, 0.6f, 0.4f, 1.2f }, -1,        PF::harmony,      DF::any,  RF::room, LF::tape,  CF::any },  // music box
+        { darkToyBox, { lofi, filter },  { 0.0f, 0.6f, 0.3f, 0.0f, 0.3f, 0.2f, 0.8f, 0.5f, 0.8f }, telephone, PF::octaveEither, DF::slap, RF::any,  LF::crush, CF::any },  // creepy phone
+        { darkToyBox, { pitch, reverb }, { 0.6f, 0.0f, 0.2f, 0.6f, 0.8f, 0.1f, 0.4f, 0.4f, 0.0f }, muffled,   PF::uncanny,      DF::any,  RF::room, LF::any,   CF::any },  // uncanny whisper
+
+        // Pitched Rage: the whole vocal pitched, or stacked octaves, with grit and throws.
+        { pitchedRage, { pitch, delay }, { 0.4f, 0.0f, 1.0f, 0.3f, 0.3f, 0.6f, 0.3f, 0.0f, 0.5f }, radio, PF::wholeUp,      DF::rhythmic, RF::any,   LF::any, CF::groove }, // chipmunk
+        { pitchedRage, { pitch, drive }, { 0.6f, 0.0f, 0.0f, 0.3f, 0.3f, 0.4f, 0.4f, 0.8f, 1.0f }, radio, PF::wholeDown,    DF::throwIt,  RF::space, LF::any, CF::any },    // demon
+        { pitchedRage, { pitch, chop },  { 0.3f, 0.0f, 0.8f, 0.3f, 0.4f, 0.0f, 0.3f, 1.0f, 0.6f }, -1,    PF::octaveEither, DF::rhythmic, RF::any,   LF::any, CF::groove }, // octave stack
+
+        // Lo-Fi Bedroom: worn tape, phone memos, dusty rooms.
+        { lofiBedroom, { lofi, reverb }, { 0.8f, 0.3f, 0.6f, 0.0f, 0.8f, 0.1f, 0.3f, 0.4f, 0.0f }, muffled,   PF::octaveDown, DF::any,  RF::room, LF::tape,  CF::any },   // tape demo
+        { lofiBedroom, { lofi, filter }, { 0.0f, 0.2f, 0.4f, 0.0f, 0.4f, 0.1f, 0.3f, 0.5f, 0.6f }, telephone, PF::octaveDown, DF::slap, RF::room, LF::phone, CF::any },   // phone memo
+        { lofiBedroom, { lofi, drive },  { 0.6f, 0.4f, 0.0f, 0.0f, 0.6f, 0.2f, 0.3f, 0.4f, 1.0f }, muffled,   PF::octaveDown, DF::any,  RF::room, LF::crush, CF::any },   // dusty room
+
+        // Glitch: stutters, reverse swells, pitch jumps.
+        { glitch, { chop, delay },    { 0.6f, 0.8f, 0.4f, 0.8f, 0.2f, 0.0f, 0.6f, 0.0f, 0.4f }, -1,    PF::any,          DF::rhythmic, RF::any,  LF::crush, CF::fast },   // stutter
+        { glitch, { reverse, reverb },{ 0.4f, 0.8f, 0.2f, 0.4f, 0.4f, 0.6f, 0.0f, 0.6f, 0.0f }, -1,    PF::octaveEither, DF::any,      RF::hall, LF::any,   CF::any },    // reverse swell
+        { glitch, { chop, pitch },    { 0.4f, 0.0f, 0.3f, 0.6f, 0.2f, 0.0f, 0.8f, 0.6f, 0.4f }, radio, PF::harmony,      DF::any,      RF::any,  LF::any,   CF::groove }, // pitch jumps
+    };
+    constexpr int numRecipes = (int) std::size (recipes);
+
+    // Any Vibe: this share of rolls is free-form; the rest borrow a recipe from any style.
+    constexpr float freeFormChance = 0.25f;
+
+    // Remembers the last recipe (in the state tree) so a roll never repeats it.
+    const juce::Identifier lastRecipeProperty { "diceLastRecipe" };
 
     void setValue (juce::AudioProcessorValueTreeState& state, const juce::String& id, float value)
     {
@@ -77,14 +139,14 @@ namespace
         return v != nullptr ? v->load() : 0.0f;
     }
 
-    // Random draws, steered by intensity: at 0 they land in the lower 40 % of
-    // a range, at 1 in the upper 40 %, at 0.5 in the middle.
+    // Random draws. Most of every range is reachable on every level; the level
+    // nudges where they land (LOW toward the gentle end, HIGH toward the wild).
     struct Draw
     {
         juce::Random& rng;
-        float intensity;
+        float bias;
 
-        float t() const                          { return 0.6f * intensity + 0.4f * rng.nextFloat(); }
+        float t() const                          { return 0.65f * rng.nextFloat() + 0.35f * bias; }
         float range (float lo, float hi) const    { return lo + t() * (hi - lo); }
         float logRange (float lo, float hi) const { return lo * std::pow (hi / lo, t()); }
         float uniform (float lo, float hi) const  { return lo + rng.nextFloat() * (hi - lo); }
@@ -120,6 +182,23 @@ namespace
             return weighted (weights.begin(), (int) weights.size());
         }
     };
+
+    // Picks a recipe for the style (never the last one when there's a choice),
+    // or -1 for a free-form Any Vibe roll.
+    int pickRecipe (int style, int lastRecipe, juce::Random& rng)
+    {
+        if (style == anyVibe && rng.nextFloat() < freeFormChance)
+            return -1;
+
+        juce::Array<int> candidates;
+        for (int r = 0; r < numRecipes; ++r)
+            if ((style == anyVibe || recipes[r].style == style) && r != lastRecipe)
+                candidates.add (r);
+
+        if (candidates.isEmpty())
+            return lastRecipe;
+        return candidates[rng.nextInt (candidates.size())];
+    }
 }
 
 const juce::StringArray& DiceRoller::moduleIds()
@@ -134,14 +213,36 @@ const juce::StringArray& DiceRoller::styleNames()
     return names;
 }
 
+const juce::StringArray& DiceRoller::levelNames()
+{
+    static const juce::StringArray names { "Low", "Medium", "High" };
+    return names;
+}
+
+int DiceRoller::numRecipesFor (int style)
+{
+    int n = 0;
+    for (auto& r : recipes)
+        n += (style == anyVibe || r.style == style) ? 1 : 0;
+    return n;
+}
+
 juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::Random& rng)
 {
     const auto& ids = moduleIds();
     jassert (ids.size() == numModules);
 
-    const float intensity = juce::jlimit (0.0f, 1.0f, valueOf (state, ParamIDs::diceIntensity) / 100.0f);
-    const int style = juce::jlimit (0, numStyles - 1, juce::roundToInt (valueOf (state, ParamIDs::diceStyle)));
-    const Draw draw { rng, intensity };
+    const int level = juce::jlimit (0, 2, juce::roundToInt (valueOf (state, ParamIDs::diceLevel)));
+    const int requestedStyle = juce::jlimit (0, numStyles - 1, juce::roundToInt (valueOf (state, ParamIDs::diceStyle)));
+    const Draw draw { rng, levelBias[level] };
+
+    const int lastRecipe = (int) state.state.getProperty (lastRecipeProperty, -1);
+    const int recipeIndex = pickRecipe (requestedStyle, lastRecipe, rng);
+    const Recipe* recipe = recipeIndex >= 0 ? &recipes[recipeIndex] : nullptr;
+    state.state.setProperty (lastRecipeProperty, recipeIndex, nullptr);
+
+    // Settings follow the recipe's own style (Any Vibe borrows recipes from all styles).
+    const int style = recipe != nullptr ? (int) recipe->style : (int) anyVibe;
 
     // 1. Which effects. Locked ones stay exactly as they are; locked effects
     //    that are on count toward the total.
@@ -154,21 +255,28 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
             ++lockedOn;
     }
 
-    const int total = juce::jlimit (1, 5, 1 + juce::roundToInt (2.0f * intensity) + rng.nextInt (3));
+    const int total = levelMinCount[level] + rng.nextInt (levelMaxCount[level] - levelMinCount[level] + 1);
     int slots = juce::jmax (0, total - lockedOn);
 
-    if (const int signature = styleSignature[style]; signature >= 0 && slots > 0 && ! locked[(size_t) signature])
+    if (recipe != nullptr)
     {
-        chosen[(size_t) signature] = true;
-        --slots;
+        for (int core : recipe->core)
+        {
+            if (slots > 0 && ! locked[(size_t) core] && ! chosen[(size_t) core])
+            {
+                chosen[(size_t) core] = true;
+                --slots;
+            }
+        }
     }
 
+    const float* weights = recipe != nullptr ? recipe->extraWeights : freeFormWeights;
     for (; slots > 0; --slots)
     {
         float sum = 0.0f;
         for (int m = 0; m < numModules; ++m)
             if (! locked[(size_t) m] && ! chosen[(size_t) m])
-                sum += styleWeights[style][m];
+                sum += weights[m];
         if (sum <= 0.0f)
             break;
 
@@ -176,13 +284,15 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
         int k = -1;
         for (int m = 0; m < numModules; ++m)
         {
-            if (locked[(size_t) m] || chosen[(size_t) m])
+            if (locked[(size_t) m] || chosen[(size_t) m] || weights[m] <= 0.0f)
                 continue;
             k = m;
-            pick -= styleWeights[style][m];
+            pick -= weights[m];
             if (pick < 0.0f)
                 break;
         }
+        if (k < 0)
+            break;
         chosen[(size_t) k] = true;
     }
 
@@ -191,8 +301,11 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
 
     if (chosen[filter])
     {
-        const auto& s = filterShapes[draw.weighted (filterShapeWeights[style], numFilterShapes)];
-        // Higher intensity = a narrower, more obvious band.
+        const int shapeIndex = recipe != nullptr && recipe->filterShape >= 0
+                                 ? recipe->filterShape
+                                 : draw.weighted (filterShapeWeights[style], numFilterShapes);
+        const auto& s = filterShapes[shapeIndex];
+        // Further toward HIGH = a narrower, more obvious band.
         setValue (state, FilterModule::lowCutId,    draw.logRange (s.lowCutLo, s.lowCutHi));
         setValue (state, FilterModule::highCutId,   draw.logRange (s.highCutHi, s.highCutLo));
         setValue (state, FilterModule::resonanceId, draw.range (s.resonanceLo, s.resonanceHi));
@@ -202,56 +315,62 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
     if (chosen[pitch])
     {
         float shift = 0.0f, mix = 0.0f;
-        switch (style)
+        const auto feel = recipe != nullptr ? recipe->pitchFeel : PitchFeel::any;
+        switch (feel)
         {
-            case dreamyPop:   shift = draw.oneOf ({ -12, 12 }); mix = draw.range (12, 35); break;
-            case lofiBedroom: shift = -12.0f;                   mix = draw.range (15, 40); break;
-            case glitch:      shift = draw.oneOf ({ -12, 12, -7, 7, 5 }); mix = draw.range (40, 100); break;
-            case darkToyBox:
-                if (draw.chance (0.5f)) { shift = draw.oneOf ({ -4, -3, 3, 4 }); mix = 100.0f; }   // uncanny, slightly off voice
-                else                    { shift = draw.oneOf ({ -12, 12, 7 }); mix = draw.range (30, 60); }
-                break;
-            case pitchedRage:
-                if (draw.chance (0.5f)) { shift = draw.oneOf ({ 3, 4, 5, -3, -4, -5 }); mix = 100.0f; } // the whole vocal pitched
-                else                    { shift = draw.oneOf ({ -12, 12 }); mix = draw.range (35, 70); }
-                break;
+            case PitchFeel::octaveDown:   shift = -12.0f;                               mix = draw.range (15, 45);  break;
+            case PitchFeel::octaveUp:     shift = 12.0f;                                mix = draw.range (12, 35);  break;
+            case PitchFeel::octaveEither: shift = draw.oneOf ({ -12, 12 });             mix = draw.range (20, 55);  break;
+            case PitchFeel::harmony:      shift = draw.oneOf ({ -7, -5, 5, 7, 12 });    mix = draw.range (30, 65);  break;
+            case PitchFeel::wholeUp:      shift = draw.oneOf ({ 3, 4, 5, 7 });          mix = 100.0f;               break;
+            case PitchFeel::wholeDown:    shift = draw.oneOf ({ -3, -4, -5, -7 });      mix = 100.0f;               break;
+            case PitchFeel::uncanny:      shift = draw.oneOf ({ -4, -3, -2, 2, 3, 4 }); mix = 100.0f;               break;
+            case PitchFeel::any:
             default:
-                if (draw.chance (0.2f + 0.3f * intensity)) { shift = draw.oneOf ({ -5, -3, 3, 5 }); mix = 100.0f; }
-                else                                       { shift = draw.oneOf ({ -12, -7, -5, 5, 7, 12 }); mix = draw.range (20, 60); }
+                if (draw.chance (0.15f + 0.15f * (float) level)) { shift = draw.oneOf ({ -5, -3, 3, 5 }); mix = 100.0f; }
+                else                                             { shift = draw.oneOf ({ -12, -7, -5, 5, 7, 12 }); mix = draw.range (20, 65); }
                 break;
         }
         setValue (state, PitchModule::shiftId, shift);
         setValue (state, PitchModule::mixId, mix);
 
-        if (mix >= 90.0f)                 adjectives.add (shift >= 5.0f ? "Chipmunk" : shift > 0.0f ? "Pitched" : shift <= -5.0f ? "Demon" : "Deep");
+        if (mix >= 90.0f)                 adjectives.add (shift >= 5.0f ? "Chipmunk" : shift > 0.0f ? "Pitched" : shift <= -5.0f ? "Demon" : "Uncanny");
         else if (std::abs (shift) >= 12)  adjectives.add (shift > 0.0f ? "Octave" : "Deep");
         else                              adjectives.add ("Harmony");
     }
 
     if (chosen[drive])
     {
-        const float amount = style == dreamyPop   ? draw.range (10, 35)
-                           : style == pitchedRage ? draw.range (40, 90)
-                           : style == lofiBedroom ? draw.range (20, 55)
-                                                  : draw.range (15, 80);
+        const float amount = style == dreamyPop   ? draw.range (5, 40)
+                           : style == pitchedRage ? draw.range (30, 95)
+                           : style == lofiBedroom ? draw.range (15, 65)
+                                                  : draw.range (10, 85);
         setValue (state, DriveModule::amountId, amount);
-        setValue (state, DriveModule::toneId, draw.uniform (30, 90));
+        setValue (state, DriveModule::toneId, draw.uniform (25, 95));
         adjectives.add (amount < 45.0f ? "Warm" : "Gritty");
     }
 
     if (chosen[lofi])
     {
-        const float wobble = style == lofiBedroom ? draw.range (30, 90) : draw.range (5, 70);
-        setValue (state, LoFiModule::crushId, style == lofiBedroom ? draw.range (35, 90) : draw.range (20, 85));
+        float crush = 0.0f, wobble = 0.0f, mix = 0.0f;
+        switch (recipe != nullptr ? recipe->lofiFeel : LoFiFeel::any)
+        {
+            case LoFiFeel::tape:  crush = draw.range (5, 50);  wobble = draw.range (45, 100); mix = draw.range (60, 100); break;
+            case LoFiFeel::crush: crush = draw.range (55, 98); wobble = draw.range (0, 30);   mix = draw.range (50, 100); break;
+            case LoFiFeel::phone: crush = draw.range (35, 75); wobble = draw.range (0, 25);   mix = 100.0f;               break;
+            case LoFiFeel::any:
+            default:              crush = draw.range (15, 90); wobble = draw.range (0, 80);   mix = draw.range (40, 100); break;
+        }
+        setValue (state, LoFiModule::crushId, crush);
         setValue (state, LoFiModule::wobbleId, wobble);
-        setValue (state, LoFiModule::mixId, draw.range (50, 100));
-        adjectives.add (wobble > 50.0f ? "Tape" : "Dusty");
+        setValue (state, LoFiModule::mixId, mix);
+        adjectives.add (wobble > 50.0f ? "Tape" : crush > 70.0f ? "Crushed" : "Dusty");
     }
 
     if (chosen[chorus])
     {
-        const float depth = style == dreamyPop ? draw.range (35, 80) : draw.range (25, 85);
-        setValue (state, ChorusModule::rateId, draw.logRange (0.2f, 2.5f));
+        const float depth = style == dreamyPop ? draw.range (30, 85) : draw.range (20, 90);
+        setValue (state, ChorusModule::rateId, draw.logRange (0.15f, 3.5f));
         setValue (state, ChorusModule::depthId, depth);
         adjectives.add (depth < 50.0f ? "Doubled" : "Wide");
     }
@@ -259,39 +378,60 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
     if (chosen[chop])
     {
         // Indices into ChopModule::rateNames(): 1/32, 1/16, 1/16T, 1/8, 1/8T, 1/4
-        const int rate = style == glitch ? draw.weighted ({ 3, 2, 3, 1, 1, 0.5f })
-                                         : draw.weighted ({ 1, 3, 1, 2, 1, 1 });
+        int rate = 1;
+        switch (recipe != nullptr ? recipe->chopFeel : ChopFeel::any)
+        {
+            case ChopFeel::fast:   rate = draw.weighted ({ 3, 1, 2, 0, 0, 0 }); break;
+            case ChopFeel::groove: rate = draw.weighted ({ 0, 3, 1, 2, 1, 0.5f }); break;
+            case ChopFeel::any:
+            default:               rate = draw.weighted ({ 1, 3, 1, 2, 1, 1 }); break;
+        }
         setValue (state, ChopModule::rateId, (float) rate);
-        setValue (state, ChopModule::depthId, draw.range (50, 100));
+        setValue (state, ChopModule::depthId, draw.range (40, 100));
         adjectives.add (rate == 0 || rate == 2 ? "Stutter" : "Choppy");
     }
 
     if (chosen[reverse])
     {
         // Indices into ReverseModule::lengthNames(): 1/16, 1/8, 1/4, 1/2
-        setValue (state, ReverseModule::lengthId, (float) draw.weighted ({ 1, 2, 3, 1 }));
-        setValue (state, ReverseModule::mixId, draw.range (25, 70));
+        setValue (state, ReverseModule::lengthId, (float) draw.weighted ({ 1, 2, 3, 1.5f }));
+        setValue (state, ReverseModule::mixId, draw.range (20, 75));
         adjectives.add ("Backwards");
     }
 
     if (chosen[delay])
     {
         // Indices into DelayModule::divisionNames(): 1/16, 1/8T, 1/8, 1/8D, 1/4T, 1/4, 1/4D, 1/2.
-        // 1/8, 1/8 dotted and 1/4 are the classic vocal throws.
-        const int division = style == dreamyPop ? draw.weighted ({ 0, 0, 1, 3, 0, 3, 1, 0 })
-                                                : draw.weighted ({ 1, 1, 2, 3, 1, 2, 1, 1 });
+        int division = 0;
+        float mix = draw.range (12, 50);
+        switch (recipe != nullptr ? recipe->delayFeel : DelayFeel::any)
+        {
+            case DelayFeel::slap:     division = draw.weighted ({ 3, 1, 0, 0, 0, 0, 0, 0 }); break;
+            case DelayFeel::dotted:   division = draw.weighted ({ 0, 0, 0, 3, 0, 0, 2, 0 }); break;
+            case DelayFeel::throwIt:  division = draw.weighted ({ 0, 0, 0, 0, 0, 3, 1, 2 }); mix = draw.range (30, 60); break;
+            case DelayFeel::rhythmic: division = draw.weighted ({ 0, 2, 3, 1, 2, 0, 0, 0 }); break;
+            case DelayFeel::any:
+            default:                  division = draw.weighted ({ 1, 1, 2, 3, 1, 2, 1, 1 }); break;
+        }
         setValue (state, DelayModule::timeId, (float) division);
-        setValue (state, DelayModule::feedbackId, draw.range (15, 65));
-        setValue (state, DelayModule::mixId, draw.range (15, 50));
+        setValue (state, DelayModule::feedbackId, draw.range (10, 70));
+        setValue (state, DelayModule::mixId, mix);
         nouns.add (division == 0 ? "Slap" : division == 7 ? "Throw" : "Echo");
     }
 
     if (chosen[reverb])
     {
-        const bool big = style == dreamyPop;
-        const float size = big ? draw.range (65, 95) : draw.range (30, 95);
+        float size = 0.0f, mix = 0.0f;
+        switch (recipe != nullptr ? recipe->reverbFeel : ReverbFeel::any)
+        {
+            case ReverbFeel::room:  size = draw.range (20, 50); mix = draw.range (12, 40); break;
+            case ReverbFeel::space: size = draw.range (45, 80); mix = draw.range (15, 50); break;
+            case ReverbFeel::hall:  size = draw.range (70, 98); mix = draw.range (20, 55); break;
+            case ReverbFeel::any:
+            default:                size = draw.range (25, 95); mix = draw.range (12, 50); break;
+        }
         setValue (state, ReverbModule::sizeId, size);
-        setValue (state, ReverbModule::mixId, big ? draw.range (25, 55) : draw.range (15, 50));
+        setValue (state, ReverbModule::mixId, mix);
         nouns.add (size < 50.0f ? "Room" : size < 78.0f ? "Space" : "Hall");
     }
 

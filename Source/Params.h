@@ -13,7 +13,7 @@ namespace ParamIDs
     inline constexpr auto bypass     = "bypass";
 
     // Dice controls (they steer ROLL; they never change the sound by themselves).
-    inline constexpr auto diceIntensity = "dice_intensity";
+    inline constexpr auto diceLevel     = "dice_level";   // Low / Medium / High
     inline constexpr auto diceStyle     = "dice_style";
     inline juce::String diceLock (const juce::String& moduleId) { return "dice_lock_" + moduleId; }
 
