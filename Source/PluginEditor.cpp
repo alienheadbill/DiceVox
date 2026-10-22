@@ -132,7 +132,8 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
         { LoFiModule::wobbleId, "Wobble", "Wobble: tape wow and flutter, a slowly swaying pitch." },
         { LoFiModule::mixId,    "Mix",    "Mix: blend the crushed sound with the clean vocal." } });
 
-    addCard ("alien", "Alien Voice", "your vocal beamed from a spaceship: saucer ring-mod, android robot or space-radio transmission.", {
+    // (Card title "Alien": "Alien Voice" doesn't fit beside the lock and ON/OFF switch.)
+    addCard ("alien", "Alien", "Alien Voice, your vocal beamed from a spaceship: saucer ring-mod, android robot or space-radio transmission.", {
         { AlienModule::modeId,   "Mode",   "Mode: Saucer (ring-mod wobble to metallic bells), Android (robot voice on one metallic note) or Transmission (crackly space radio)." },
         { AlienModule::amountId, "Amount", "Amount: Saucer = wobble speed / pitch, Android = robot note, Transmission = how rough the signal is." },
         { AlienModule::mixId,    "Mix",    "Mix: blend the alien voice with your clean vocal." } });
