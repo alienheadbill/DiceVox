@@ -141,7 +141,7 @@ namespace
     // Input / Mix / Output, which a preset sets but a roll never touches.
     const juce::Identifier beforePresetProperty { "beforePreset" };
 
-    void setParameter (juce::RangedAudioParameter& param, float value)
+    void setParameterValue (juce::RangedAudioParameter& param, float value)
     {
         param.beginChangeGesture();
         param.setValueNotifyingHost (param.convertTo0to1 (value));
@@ -190,7 +190,7 @@ bool DiceVoxProcessor::undoRoll()
 
         const auto saved = snapshot.getChildWithProperty ("id", ranged->getParameterID());
         if (saved.isValid())
-            setParameter (*ranged, (float) saved.getProperty ("value"));
+            setParameterValue (*ranged, (float) saved.getProperty ("value"));
     }
 
     state.state.setProperty (rollNameProperty, snapshot.getProperty (rollNameProperty), nullptr);
@@ -234,7 +234,7 @@ bool DiceVoxProcessor::loadPreset (const juce::File& file)
         const auto* saved = xml->getChildByAttribute ("id", ranged->getParameterID());
         const float value = saved != nullptr ? (float) saved->getDoubleAttribute ("value")
                                              : ranged->convertFrom0to1 (ranged->getDefaultValue());
-        setParameter (*ranged, value);
+        setParameterValue (*ranged, value);
     }
 
     state.state.setProperty (rollNameProperty, xml->getStringAttribute ("rollName"), nullptr);
