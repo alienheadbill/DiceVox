@@ -5,14 +5,15 @@
 // ---------------------------------------------------------------------------
 // EffectCard — one effect of the chain on screen.
 //
-//   DELAY        (o ON)
+//   DELAY      [lock] (o ON)
 //   ( knob )  ( knob )
 //        ( knob )
 //
-// The ON / OFF switch is the module's "<id>_on" parameter; the knobs are its
-// parameters (two per row). The card outline lights up while the effect is on.
-// Every control has the standard APVTS attachment, so automation, host undo
-// and dice rolls all show up here.
+// The ON / OFF switch is the module's "<id>_on" parameter, the padlock its
+// dice lock (a locked effect keeps its settings when you ROLL), and the knobs
+// are its parameters (two per row). The card outline lights up while the
+// effect is on. Every control has the standard APVTS attachment, so
+// automation, host undo and dice rolls all show up here.
 // ---------------------------------------------------------------------------
 class EffectCard : public juce::Component
 {
@@ -32,7 +33,8 @@ public:
 private:
     juce::String title;
     juce::ToggleButton power;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttachment;
+    juce::TextButton lock;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttachment, lockAttachment;
     std::vector<std::unique_ptr<ahe::Knob>> knobs;
     juce::Rectangle<int> titleArea;
 

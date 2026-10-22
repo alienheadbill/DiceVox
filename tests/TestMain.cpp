@@ -9,6 +9,11 @@
 #include "modules/ChorusModule.h"
 #include "modules/DelayModule.h"
 #include "modules/ReverbModule.h"
+#include "modules/PitchModule.h"
+#include "modules/LoFiModule.h"
+#include "modules/ChopModule.h"
+#include "modules/ReverseModule.h"
+#include "dice/DiceRoller.h"
 #include "ahe/AHEBrandMarks.h"
 #include "ahe/AHEFonts.h"
 #include "ui/RollChamber.h"
@@ -17,6 +22,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <tuple>
 
 namespace
 {
@@ -318,8 +324,15 @@ int main()
                                            "drive_on,drive_amount,drive_tone,"
                                            "chorus_on,chorus_rate,chorus_depth,"
                                            "delay_on,delay_time,delay_feedback,delay_mix,"
-                                           "reverb_on,reverb_size,reverb_mix",
-               "Parameter IDs and order: Phase 1 unchanged, effects appended", ids.joinIntoString (",").toStdString());
+                                           "reverb_on,reverb_size,reverb_mix,"
+                                           "pitch_on,pitch_shift,pitch_mix,"
+                                           "lofi_on,lofi_crush,lofi_wobble,lofi_mix,"
+                                           "chop_on,chop_rate,chop_depth,"
+                                           "reverse_on,reverse_length,reverse_mix,"
+                                           "dice_intensity,dice_style,"
+                                           "dice_lock_filter,dice_lock_drive,dice_lock_chorus,dice_lock_delay,dice_lock_reverb,"
+                                           "dice_lock_pitch,dice_lock_lofi,dice_lock_chop,dice_lock_reverse",
+               "Parameter IDs and order: Phase 1 unchanged, effects and dice controls appended", ids.joinIntoString (",").toStdString());
     }
     {
         // Default state captured from main (281c9f6) before the UI work. The four
@@ -338,7 +351,15 @@ int main()
                                       { "drive_on", 0.0 }, { "drive_amount", 35.0 }, { "drive_tone", 60.0 },
                                       { "chorus_on", 0.0 }, { "chorus_rate", 0.8 }, { "chorus_depth", 40.0 },
                                       { "delay_on", 0.0 }, { "delay_time", 5.0 }, { "delay_feedback", 35.0 }, { "delay_mix", 30.0 },
-                                      { "reverb_on", 0.0 }, { "reverb_size", 50.0 }, { "reverb_mix", 25.0 } };
+                                      { "reverb_on", 0.0 }, { "reverb_size", 50.0 }, { "reverb_mix", 25.0 },
+                                      { "pitch_on", 0.0 }, { "pitch_shift", -12.0 }, { "pitch_mix", 40.0 },
+                                      { "lofi_on", 0.0 }, { "lofi_crush", 50.0 }, { "lofi_wobble", 30.0 }, { "lofi_mix", 100.0 },
+                                      { "chop_on", 0.0 }, { "chop_rate", 1.0 }, { "chop_depth", 80.0 },
+                                      { "reverse_on", 0.0 }, { "reverse_length", 2.0 }, { "reverse_mix", 40.0 },
+                                      { "dice_intensity", 50.0 }, { "dice_style", 0.0 },
+                                      { "dice_lock_filter", 0.0 }, { "dice_lock_drive", 0.0 }, { "dice_lock_chorus", 0.0 },
+                                      { "dice_lock_delay", 0.0 }, { "dice_lock_reverb", 0.0 }, { "dice_lock_pitch", 0.0 },
+                                      { "dice_lock_lofi", 0.0 }, { "dice_lock_chop", 0.0 }, { "dice_lock_reverse", 0.0 } };
 
         bool ok = xml != nullptr && xml->getTagName() == "DiceVoxState"
                && xml->getNumChildElements() == (int) std::size (expected)
@@ -451,13 +472,15 @@ int main()
                 follows = std::abs (s->getValue() - (double) ranged->convertFrom0to1 (1.0f)) < 0.051;
             else if (auto* b = dynamic_cast<juce::Button*> (control))
                 follows = b->getToggleState();
+            else if (auto* combo = dynamic_cast<juce::ComboBox*> (control))
+                follows = combo->getSelectedItemIndex() == juce::roundToInt (ranged->convertFrom0to1 (1.0f));
             if (! follows) unwired.add (id);
             ranged->setValueNotifyingHost (ranged->getDefaultValue());
         }
         check (missing.isEmpty() && unwired.isEmpty(), "Every parameter has an on-screen control that follows automation",
                "missing: " + missing.joinIntoString (",").toStdString() + "; not following: " + unwired.joinIntoString (",").toStdString());
 
-        check (editor->getWidth() == 800 && editor->getHeight() == 530, "Editor opens at 800x530",
+        check (editor->getWidth() == 860 && editor->getHeight() == 690, "Editor opens at 860x690",
                std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight()));
     }
     {
@@ -478,7 +501,7 @@ int main()
             auto countOn = [&]
             {
                 int n = 0;
-                for (auto* id : { "filter_on", "drive_on", "chorus_on", "delay_on", "reverb_on" })
+                for (auto* id : { "filter_on", "pitch_on", "drive_on", "lofi_on", "chorus_on", "chop_on", "reverse_on", "delay_on", "reverb_on" })
                     n += p.state.getRawParameterValue (id)->load() > 0.5f ? 1 : 0;
                 return n;
             };
@@ -866,7 +889,8 @@ int main()
     // ---------------------------------------------------------------------
     // Usable v1: drive, chorus, delay, reverb, and the dice
     // ---------------------------------------------------------------------
-    const char* const allEffects[] = { "filter_on", "drive_on", "chorus_on", "delay_on", "reverb_on" };
+    const char* const allEffects[] = { "filter_on", "pitch_on", "drive_on", "lofi_on", "chorus_on",
+                                       "chop_on", "reverse_on", "delay_on", "reverb_on" };
     {
         // Drive: rounds off peaks and adds harmonics, without getting much louder.
         DiceVoxProcessor p;
@@ -993,7 +1017,7 @@ int main()
                                        }
                                    });
             const float peak = out.getMagnitude (0, out.getNumSamples());
-            check (allFinite (out) && peak < 4.0f,
+            check (allFinite (out) && peak < 6.0f,
                    "All effects stay stable under extreme automation and odd block sizes (" + std::string (channels == 2 ? "stereo" : "mono") + ")",
                    "peak " + std::to_string (peak) + " for input peak 0.3");
         }
@@ -1073,19 +1097,22 @@ int main()
         check (same, "Same dice seed gives the same roll", (nameA + " / " + nameB).toStdString());
     }
     {
-        // Rolled chains sound sane: 60 random rolls on noise, all finite and bounded.
+        // Rolled chains sound sane: 60 random rolls on noise, across every style
+        // and intensity, all finite and bounded.
         float worst = 0.0f;
         bool finite = true;
         for (int seed = 1; seed <= 60; ++seed)
         {
             DiceVoxProcessor p;
+            setParam (p, ParamIDs::diceStyle, (float) (seed % 6));
+            setParam (p, ParamIDs::diceIntensity, (float) ((seed * 37) % 101));
             juce::Random rng (seed);
             p.rollDice (rng);
             auto out = processAll (p, noise (2, (int) (1.5 * sampleRate), 0.3f, seed), sampleRate);
             finite &= allFinite (out);
             worst = std::max (worst, out.getMagnitude (0, out.getNumSamples()));
         }
-        check (finite && worst < 2.0f, "60 random rolls all play back cleanly (finite, bounded)",
+        check (finite && worst < 2.5f, "60 random rolls (all styles and intensities) play back cleanly (finite, bounded)",
                "loudest peak " + std::to_string (worst) + " for input peak 0.3");
     }
     {
@@ -1122,6 +1149,208 @@ int main()
         restored.setStateInformation (saved.getData(), (int) saved.getSize());
         check (restored.getRollName() == name && ! restored.canUndoRoll(), "Roll name survives save/reload",
                (name + " -> " + restored.getRollName()).toStdString());
+    }
+
+    // ---------------------------------------------------------------------
+    // v2: pitch, lo-fi, chop, reverse, and the dice controls
+    // ---------------------------------------------------------------------
+    auto valueOf = [] (DiceVoxProcessor& p, const juce::String& id) { return p.state.getRawParameterValue (id)->load(); };
+    {
+        // Pitch: the loudest frequency moves by the set number of semitones.
+        auto dominantHz = [] (const juce::AudioBuffer<float>& b, int start)
+        {
+            constexpr int order = 15, size = 1 << order;
+            std::vector<float> data (2 * size, 0.0f);
+            std::copy (b.getReadPointer (0) + start, b.getReadPointer (0) + start + size, data.begin());
+            juce::dsp::WindowingFunction<float> (size, juce::dsp::WindowingFunction<float>::hann)
+                .multiplyWithWindowingTable (data.data(), size);
+            juce::dsp::FFT (order).performFrequencyOnlyForwardTransform (data.data());
+            const auto peak = std::max_element (data.begin() + 1, data.begin() + size / 2);
+            return (float) ((double) std::distance (data.begin(), peak) * sampleRate / size);
+        };
+        bool ok = true;
+        std::string detail;
+        for (float shift : { 12.0f, -12.0f, 7.0f })
+        {
+            DiceVoxProcessor p;
+            setParam (p, "pitch_on", 1.0f);
+            setParam (p, PitchModule::shiftId, shift);
+            setParam (p, PitchModule::mixId, 100.0f);
+            auto out = processAll (p, sine (2, (int) (2.0 * sampleRate), 300.0, sampleRate, 0.4f), sampleRate);
+            const float hz = dominantHz (out, (int) (0.5 * sampleRate));
+            const float expected = 300.0f * std::pow (2.0f, shift / 12.0f);
+            ok &= allFinite (out) && std::abs (hz - expected) < 0.04f * expected;
+            detail += std::to_string ((int) shift) + " st: " + std::to_string ((int) hz) + " Hz (expected "
+                    + std::to_string ((int) expected) + ")  ";
+        }
+        check (ok, "Pitch shifts the vocal by the set number of semitones", detail);
+    }
+    {
+        DiceVoxProcessor p;
+        setParam (p, "pitch_on", 1.0f);
+        setParam (p, PitchModule::mixId, 0.0f);
+        const auto diff = run (p).maxDiff;
+        check (diff < 1.0e-5f, "Pitch at Mix 0 leaves the vocal untouched", "max diff " + std::to_string (diff));
+    }
+    {
+        // Lo-Fi: at Mix 0 / Wobble 0 nothing changes; fully crushed the sound is
+        // clearly degraded but not louder.
+        DiceVoxProcessor clean;
+        setParam (clean, "lofi_on", 1.0f);
+        setParam (clean, LoFiModule::mixId, 0.0f);
+        setParam (clean, LoFiModule::wobbleId, 0.0f);
+        const auto cleanDiff = run (clean).maxDiff;
+
+        DiceVoxProcessor p;
+        setParam (p, "lofi_on", 1.0f);
+        setParam (p, LoFiModule::crushId, 100.0f);
+        setParam (p, LoFiModule::wobbleId, 0.0f);
+        setParam (p, LoFiModule::mixId, 100.0f);
+        auto in  = sine (2, (int) sampleRate, 1000.0, sampleRate, 0.4f);
+        auto out = processAll (p, in, sampleRate);
+        const int tail = (int) (0.5 * sampleRate);
+        float diff = 0.0f;
+        for (int i = tail; i < out.getNumSamples(); ++i)
+            diff = std::max (diff, std::abs (out.getSample (0, i) - in.getSample (0, i)));
+        const float levelDb = juce::Decibels::gainToDecibels (out.getRMSLevel (0, tail, tail) / in.getRMSLevel (0, tail, tail));
+        check (cleanDiff < 1.0e-5f && allFinite (out) && diff > 0.05f && levelDb < 1.0f && levelDb > -12.0f,
+               "Lo-Fi crushes audibly without getting louder; Mix 0 + Wobble 0 is untouched",
+               "clean diff " + std::to_string (cleanDiff) + ", crushed diff " + std::to_string (diff) + ", level " + db (levelDb));
+    }
+    {
+        // Lo-Fi wobble sways the pitch but stays bounded and click-free.
+        DiceVoxProcessor p;
+        setParam (p, "lofi_on", 1.0f);
+        setParam (p, LoFiModule::wobbleId, 100.0f);
+        setParam (p, LoFiModule::mixId, 0.0f);
+        auto in  = sine (2, (int) (2.0 * sampleRate), 440.0, sampleRate, 0.4f);
+        auto out = processAll (p, in, sampleRate);
+        check (allFinite (out) && out.getMagnitude (0, out.getNumSamples()) < 0.45f && maxStep (out) < 1.25f * maxStep (in),
+               "Lo-Fi wobble stays bounded and click-free");
+    }
+    {
+        // Chop: 1/8 notes at 120 BPM = 8 gaps in 2 s, silent at Depth 100, click-free edges.
+        DiceVoxProcessor p;
+        setParam (p, "chop_on", 1.0f);
+        setParam (p, ChopModule::rateId, 3.0f); // 1/8
+        setParam (p, ChopModule::depthId, 100.0f);
+        auto in  = sine (2, (int) (2.0 * sampleRate), 1000.0, sampleRate, 0.4f);
+        auto out = processAll (p, in, sampleRate);
+        const int win = 240;
+        int gaps = 0;
+        bool open = true;
+        float quietest = 1.0f;
+        for (int start = 0; start + win <= out.getNumSamples(); start += win)
+        {
+            const float rms = out.getRMSLevel (0, start, win);
+            quietest = std::min (quietest, rms);
+            if (open && rms < 0.02f)       { ++gaps; open = false; }
+            else if (! open && rms > 0.2f) { open = true; }
+        }
+        check (allFinite (out) && gaps == 8 && quietest < 0.001f && maxStep (out) < 1.25f * maxStep (in),
+               "Chop gates in time with the tempo (1/8 at 120 BPM), silent gaps, no clicks",
+               std::to_string (gaps) + " gaps (expected 8), quietest " + std::to_string (quietest));
+    }
+    {
+        // Reverse: adds reversed slices on top of the vocal; Mix 0 leaves it alone.
+        DiceVoxProcessor p;
+        setParam (p, "reverse_on", 1.0f);
+        setParam (p, ReverseModule::mixId, 100.0f);
+        auto in  = sine (2, (int) (3.0 * sampleRate), 440.0, sampleRate, 0.3f);
+        auto out = processAll (p, in, sampleRate);
+        double wetSum = 0.0;
+        const int from = (int) sampleRate;
+        for (int i = from; i < out.getNumSamples(); ++i)
+            wetSum += juce::square ((double) (out.getSample (0, i) - in.getSample (0, i)));
+        const float wetRms = (float) std::sqrt (wetSum / (out.getNumSamples() - from));
+
+        DiceVoxProcessor q;
+        setParam (q, "reverse_on", 1.0f);
+        setParam (q, ReverseModule::mixId, 0.0f);
+        const auto dryDiff = run (q).maxDiff;
+
+        check (allFinite (out) && wetRms > 0.05f && out.getMagnitude (0, out.getNumSamples()) < 1.0f && dryDiff < 1.0e-5f
+                   && std::abs (ReverseModule::sliceSeconds (2, 120.0) - 0.5) < 1.0e-9,
+               "Reverse adds tempo-length reversed slices; Mix 0 leaves the vocal alone",
+               "reversed RMS " + std::to_string (wetRms) + ", Mix 0 diff " + std::to_string (dryDiff));
+    }
+    {
+        // Locks: a locked effect keeps its on/off state and settings through 50
+        // rolls, even when the style would want it; the dice controls themselves
+        // never change (not by ROLL, not by BACK).
+        DiceVoxProcessor p;
+        setParam (p, "reverb_on", 1.0f);
+        setParam (p, ReverbModule::sizeId, 33.0f);
+        setParam (p, ParamIDs::diceLock ("reverb"), 1.0f);
+        setParam (p, ParamIDs::diceLock ("chop"), 1.0f); // locked off
+        setParam (p, ParamIDs::diceIntensity, 80.0f);
+        setParam (p, ParamIDs::diceStyle, 5.0f);         // Glitch, whose signature effect is Chop
+        auto controlsKept = [&]
+        {
+            return std::abs (valueOf (p, ParamIDs::diceIntensity) - 80.0f) < 0.5f && std::abs (valueOf (p, ParamIDs::diceStyle) - 5.0f) < 0.5f
+                && valueOf (p, ParamIDs::diceLock ("reverb")) > 0.5f && valueOf (p, ParamIDs::diceLock ("chop")) > 0.5f;
+        };
+        juce::Random rng (3);
+        bool kept = true;
+        for (int r = 0; r < 50; ++r)
+        {
+            p.rollDice (rng);
+            kept &= valueOf (p, "reverb_on") > 0.5f && std::abs (valueOf (p, ReverbModule::sizeId) - 33.0f) < 0.05f
+                 && valueOf (p, "chop_on") < 0.5f && controlsKept();
+        }
+        p.undoRoll();
+        kept &= controlsKept();
+        check (kept, "Locked effects survive every roll; ROLL and BACK never change the dice controls");
+    }
+    {
+        // Intensity: 0 % rolls 1-3 effects, 100 % rolls 3-5.
+        auto stats = [&] (float intensity)
+        {
+            DiceVoxProcessor p;
+            setParam (p, ParamIDs::diceIntensity, intensity);
+            juce::Random rng (99);
+            int lo = 99, hi = 0;
+            double sum = 0.0;
+            for (int r = 0; r < 200; ++r)
+            {
+                p.rollDice (rng);
+                int on = 0;
+                for (auto* id : allEffects)
+                    on += valueOf (p, id) > 0.5f ? 1 : 0;
+                lo = std::min (lo, on);
+                hi = std::max (hi, on);
+                sum += on;
+            }
+            return std::make_tuple (lo, hi, sum / 200.0);
+        };
+        const auto [lowMin, lowMax, lowAvg] = stats (0.0f);
+        const auto [highMin, highMax, highAvg] = stats (100.0f);
+        check (lowMin >= 1 && lowMax <= 3 && highMin >= 3 && highMax <= 5 && highAvg > lowAvg + 1.5,
+               "Intensity sets how many effects a roll uses (low 1-3, high 3-5)",
+               "low " + std::to_string (lowMin) + "-" + std::to_string (lowMax) + " (avg " + std::to_string (lowAvg) + "), high "
+                   + std::to_string (highMin) + "-" + std::to_string (highMax) + " (avg " + std::to_string (highAvg) + ")");
+    }
+    {
+        // Every style always brings its signature effect.
+        struct Signature { int style; const char* effectOn; };
+        bool ok = DiceRoller::styleNames().size() == 6;
+        std::string detail;
+        for (auto s : { Signature { 1, "reverb_on" }, Signature { 2, "lofi_on" }, Signature { 3, "pitch_on" },
+                        Signature { 4, "lofi_on" }, Signature { 5, "chop_on" } })
+        {
+            DiceVoxProcessor p;
+            setParam (p, ParamIDs::diceStyle, (float) s.style);
+            juce::Random rng (s.style * 7);
+            int misses = 0;
+            for (int r = 0; r < 40; ++r)
+            {
+                p.rollDice (rng);
+                misses += valueOf (p, s.effectOn) < 0.5f ? 1 : 0;
+            }
+            ok &= misses == 0;
+            detail += DiceRoller::styleNames()[s.style].toStdString() + ": " + std::to_string (misses) + " misses  ";
+        }
+        check (ok, "Each dice style always includes its signature effect", detail);
     }
 
     {

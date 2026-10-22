@@ -76,9 +76,18 @@ void DiceVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     // Tempo-synced effects follow the host (they keep 120 BPM if it sends none).
     if (auto* playHead = getPlayHead())
+    {
         if (const auto position = playHead->getPosition())
+        {
             if (const auto bpm = position->getBpm())
                 chain.setHostTempo (*bpm);
+
+            // Beat-locked effects (Chop) follow the song position while playing.
+            if (position->getIsPlaying())
+                if (const auto ppq = position->getPpqPosition())
+                    chain.setHostPosition (*ppq);
+        }
+    }
 
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
@@ -145,14 +154,15 @@ bool DiceVoxProcessor::undoRoll()
     const auto snapshot = rollHistory.back();
     rollHistory.pop_back();
 
-    // Restore every effect parameter. Input, Mix, Output and Bypass are left
-    // alone: the dice never changes them, so BACK shouldn't either.
+    // Restore every effect parameter. Input, Mix, Output, Bypass and the dice
+    // controls (intensity, style, locks) are left alone: the dice never
+    // changes them, so BACK shouldn't either.
     const juce::StringArray globals { ParamIDs::inputGain, ParamIDs::outputGain, ParamIDs::mix, ParamIDs::bypass };
 
     for (auto* param : getParameters())
     {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
-        if (ranged == nullptr || globals.contains (ranged->getParameterID()))
+        if (ranged == nullptr || globals.contains (ranged->getParameterID()) || ParamIDs::isDiceControl (ranged->getParameterID()))
             continue;
 
         const auto saved = snapshot.getChildWithProperty ("id", ranged->getParameterID());

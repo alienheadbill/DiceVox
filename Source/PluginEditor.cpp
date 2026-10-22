@@ -1,8 +1,12 @@
 #include "PluginEditor.h"
 #include "Params.h"
 #include "modules/FilterModule.h"
+#include "modules/PitchModule.h"
 #include "modules/DriveModule.h"
+#include "modules/LoFiModule.h"
 #include "modules/ChorusModule.h"
+#include "modules/ChopModule.h"
+#include "modules/ReverseModule.h"
 #include "modules/DelayModule.h"
 #include "modules/ReverbModule.h"
 
@@ -21,10 +25,10 @@ DiceVoxEditor::DiceVoxEditor (DiceVoxProcessor& p)
     setLookAndFeel (&lookAndFeel);
     tooltips.setLookAndFeel (&lookAndFeel);
 
-    // 800x530 by default; optional resize up to 150% with a fixed aspect ratio.
-    // The size is not saved with the project.
+    // 860x690 by default; resizable from 80% (small screens) to 130% with a
+    // fixed aspect ratio. The size is not saved with the project.
     setResizable (true, true);
-    setResizeLimits (designWidth, designHeight,
+    setResizeLimits (juce::roundToInt (designWidth * minScale), juce::roundToInt (designHeight * minScale),
                      juce::roundToInt (designWidth * maxScale), juce::roundToInt (designHeight * maxScale));
     if (auto* c = getConstrainer())
         c->setFixedAspectRatio ((double) designWidth / (double) designHeight);
@@ -45,13 +49,13 @@ void DiceVoxEditor::paint (juce::Graphics& g)
 
 void DiceVoxEditor::resized()
 {
-    const float scale = juce::jlimit (1.0f, (float) maxScale, (float) getWidth() / (float) designWidth);
+    const float scale = juce::jlimit ((float) minScale, (float) maxScale, (float) getWidth() / (float) designWidth);
     content.setBounds (0, 0, designWidth, designHeight);
     content.setTransform (juce::AffineTransform::scale (scale));
 }
 
 // ============================================================================
-// Content (the 800x530 design canvas)
+// Content (the 860x690 design canvas)
 // ============================================================================
 DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
     : roll (p),
@@ -78,13 +82,30 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
         { FilterModule::highCutId,   "High Cut",  "High Cut: removes everything above this frequency (darker, muffled voice as you lower it)." },
         { FilterModule::resonanceId, "Resonance", "Resonance: a boost right at the cutoffs, for a nasal, honky edge." } });
 
+    addCard ("pitch", "Pitch", "shifts the vocal up or down, as a pitched double or the whole voice.", {
+        { PitchModule::shiftId, "Shift", "Shift: semitones up or down (12 = one octave). Up sounds small and bright, down big and dark." },
+        { PitchModule::mixId,   "Mix",   "Mix: low = a pitched double under your vocal, 100% = only the pitched voice." } });
+
     addCard ("drive", "Drive", "saturation for warmth and grit.", {
         { DriveModule::amountId, "Amount", "Amount: how hard the vocal is driven (warm at low settings, gritty at high)." },
         { DriveModule::toneId,   "Tone",   "Tone: lower it to soften the fizz the drive adds." } });
 
+    addCard ("lofi", "Lo-Fi", "bitcrushed, phone-recorded, worn-tape character.", {
+        { LoFiModule::crushId,  "Crush",  "Crush: fewer bits and a lower sample rate (dusty, crunchy, darker)." },
+        { LoFiModule::wobbleId, "Wobble", "Wobble: tape wow and flutter, a slowly swaying pitch." },
+        { LoFiModule::mixId,    "Mix",    "Mix: blend the crushed sound with the clean vocal." } });
+
     addCard ("chorus", "Chorus", "doubles the vocal and spreads it wide.", {
         { ChorusModule::rateId,  "Rate",  "Rate: how fast the doubled voices drift." },
         { ChorusModule::depthId, "Depth", "Depth: how far the doubled voices drift apart (wider and more wobbly)." } });
+
+    addCard ("chop", "Chop", "tempo-synced stutter: cuts the vocal on and off in rhythm.", {
+        { ChopModule::rateId,  "Rate",  "Rate: chop speed in notes, locked to your song's beat (T = triplet)." },
+        { ChopModule::depthId, "Depth", "Depth: how far the gaps drop (100% = silent gaps)." } });
+
+    addCard ("reverse", "Reverse", "reversed slices of the vocal that swell in around it.", {
+        { ReverseModule::lengthId, "Length", "Length: how long each reversed slice is, in notes at your project tempo." },
+        { ReverseModule::mixId,    "Mix",    "Mix: how loud the reversed slices are. Your vocal itself stays at full level." } });
 
     addCard ("delay", "Delay", "tempo-synced echoes that bounce left and right.", {
         { DelayModule::timeId,     "Time",     "Time: echo length in notes, synced to your project tempo (D = dotted, T = triplet)." },
@@ -126,7 +147,7 @@ void DiceVoxEditor::Content::resized()
     area.removeFromBottom (space::s);
 
     // Bottom row: bypass on the left, Input / Mix / Output in the middle
-    bottomArea = area.removeFromBottom (100);
+    bottomArea = area.removeFromBottom (96);
     {
         auto row = bottomArea.withTrimmedTop (space::s);
         bypassSwitch.setBounds (row.removeFromLeft (140).withSizeKeepingCentre (140, 28));
@@ -138,18 +159,32 @@ void DiceVoxEditor::Content::resized()
     }
 
     // ROLL chamber
-    roll.setBounds (area.removeFromTop (88));
+    roll.setBounds (area.removeFromTop (96));
     area.removeFromTop (space::m);
     area.removeFromBottom (space::m);
 
-    // Effect cards: equal columns
+    // Effect cards, in signal order: two rows of up to five equal cards
+    // (a shorter second row is centred).
+    constexpr int perRow = 5;
     const int gap = space::s;
-    const int numCards = (int) cards.size();
-    const int cardW = (area.getWidth() - gap * (numCards - 1)) / juce::jmax (1, numCards);
-    for (auto& card : cards)
+    const int cardW = (area.getWidth() - gap * (perRow - 1)) / perRow;
+    const int numRows = ((int) cards.size() + perRow - 1) / perRow;
+    const int cardH = (area.getHeight() - gap * (numRows - 1)) / juce::jmax (1, numRows);
+
+    for (int r = 0; r < numRows; ++r)
     {
-        card->setBounds (area.removeFromLeft (cardW));
-        area.removeFromLeft (gap);
+        auto row = area.removeFromTop (cardH);
+        area.removeFromTop (gap);
+
+        const int first = r * perRow;
+        const int inRow = juce::jmin (perRow, (int) cards.size() - first);
+        row = row.withSizeKeepingCentre (inRow * cardW + (inRow - 1) * gap, cardH);
+
+        for (int c = 0; c < inRow; ++c)
+        {
+            cards[(size_t) (first + c)]->setBounds (row.removeFromLeft (cardW));
+            row.removeFromLeft (gap);
+        }
     }
 }
 

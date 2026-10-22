@@ -18,6 +18,8 @@ namespace ahe
     //                 "ahe.onText" / "ahe.offText" for the label in each state and
     //                 "ahe.onMeansActive" (bool) to say whether ON = processing.
     //   role::primary TextButton drawn as the big purple main action (ROLL).
+    //   role::lock    toggling TextButton drawn as a padlock: closed + purple
+    //                 when on, open + muted when off (shape, not just colour).
     // A Slider with the "ahe.compact" property gets a smaller value read-out
     // (for small knobs, e.g. inside effect cards).
     // -----------------------------------------------------------------------

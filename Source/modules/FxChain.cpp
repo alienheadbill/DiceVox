@@ -4,25 +4,45 @@
 #include "ChorusModule.h"
 #include "DelayModule.h"
 #include "ReverbModule.h"
+#include "PitchModule.h"
+#include "LoFiModule.h"
+#include "ChopModule.h"
+#include "ReverseModule.h"
 
 FxChain::FxChain()
 {
-    // Signal-chain order: shape the tone, add grit, widen, then echo and space.
-    // Parameters are appended in this order too, so never reorder or remove a
-    // module after release (saved projects and host automation rely on it).
+    // Signal-chain order: shape and pitch the voice, add grit and texture,
+    // widen, chop, then reverse swells, echoes and space.
     modules.push_back (std::make_unique<FilterModule>());
+    modules.push_back (std::make_unique<PitchModule>());
     modules.push_back (std::make_unique<DriveModule>());
+    modules.push_back (std::make_unique<LoFiModule>());
     modules.push_back (std::make_unique<ChorusModule>());
+    modules.push_back (std::make_unique<ChopModule>());
+    modules.push_back (std::make_unique<ReverseModule>());
     modules.push_back (std::make_unique<DelayModule>());
     modules.push_back (std::make_unique<ReverbModule>());
+
+    // Parameter order: the order modules were released in. Append new modules
+    // at the end; never reorder or remove one after release.
+    parameterOrder = juce::StringArray { "filter", "drive", "chorus", "delay", "reverb", // v1
+                                         "pitch", "lofi", "chop", "reverse" };            // v2
+    jassert (parameterOrder.size() == (int) modules.size());
 
     fades.resize (modules.size());
 }
 
 void FxChain::addParameters (EffectModule::ParamList& params) const
 {
-    for (auto& m : modules)
+    for (auto& id : parameterOrder)
     {
+        const auto it = std::find_if (modules.begin(), modules.end(),
+                                      [&] (const std::unique_ptr<EffectModule>& m) { return m->getId() == id; });
+        jassert (it != modules.end());
+        if (it == modules.end())
+            continue;
+
+        auto& m = *it;
         params.push_back (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { enabledParamId (m->getId()), m->getParameterVersion() },
             m->getDisplayName() + " On",
@@ -69,6 +89,12 @@ void FxChain::setHostTempo (double bpm)
 {
     for (auto& m : modules)
         m->setHostTempo (bpm);
+}
+
+void FxChain::setHostPosition (double ppq)
+{
+    for (auto& m : modules)
+        m->setHostPosition (ppq);
 }
 
 void FxChain::process (juce::dsp::AudioBlock<float>& block)

@@ -1,16 +1,20 @@
 #include "RollChamber.h"
 #include "PluginProcessor.h"
+#include "Params.h"
+#include "dice/DiceRoller.h"
 #include "ahe/AHEBrandMarks.h"
 #include "ahe/AHELookAndFeel.h"
 
 using namespace ahe::theme;
 
 RollChamber::RollChamber (DiceVoxProcessor& p)
-    : processor (p), ufo (ahe::brand::ufoIcon())
+    : processor (p), ufo (ahe::brand::ufoIcon()),
+      intensityKnob (p.state, ParamIDs::diceIntensity, "Intensity",
+                     "Intensity: how far ROLL goes. Low = 1-3 subtle effects, high = 3-5 effects pushed hard.")
 {
     rollButton.getProperties().set (roleProperty, role::primary);
-    rollButton.setTooltip ("ROLL: build a new random vocal chain (2 to 4 effects with settings that suit vocals). "
-                           "Input, Mix and Output stay as they are.");
+    rollButton.setTooltip ("ROLL: build a new random vocal chain in the chosen style. "
+                           "Locked effects stay as they are; Input, Mix and Output are never changed.");
     rollButton.setTitle ("Roll");
     rollButton.setWantsKeyboardFocus (true);
     rollButton.onClick = [this] { processor.rollDice(); refresh(); };
@@ -21,6 +25,24 @@ RollChamber::RollChamber (DiceVoxProcessor& p)
     backButton.setWantsKeyboardFocus (true);
     backButton.onClick = [this] { processor.undoRoll(); refresh(); };
     addAndMakeVisible (backButton);
+
+    // Style: the item IDs are 1-based, in the parameter's choice order.
+    styleBox.addItemList (DiceRoller::styleNames(), 1);
+    styleBox.setTooltip ("STYLE steers what ROLL picks.\n"
+                         "Any Vibe: a bit of everything.\n"
+                         "Dreamy Pop: airy doubles, slap and dotted echoes, big glossy reverb.\n"
+                         "Dark Toy Box: lo-fi crunch, telephone filters, eerie pitch doubles.\n"
+                         "Pitched Rage: pitched-up or -down vocals, grit, echo throws, chops.\n"
+                         "Lo-Fi Bedroom: tape wobble, crushed and muffled, roomy.\n"
+                         "Glitch: stutter chops, reverse swells, pitch jumps.");
+    styleBox.setTitle ("Dice style");
+    styleBox.setComponentID (ParamIDs::diceStyle);
+    addAndMakeVisible (styleBox);
+    styleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        p.state, ParamIDs::diceStyle, styleBox);
+
+    intensityKnob.setCompact (true);
+    addAndMakeVisible (intensityKnob);
 
     refresh();
     startTimerHz (8);
@@ -65,13 +87,21 @@ void RollChamber::resized()
 {
     auto area = getLocalBounds().reduced (space::l, space::m);
 
-    rollButton.setBounds (area.removeFromRight (150));
+    rollButton.setBounds (area.removeFromRight (140));
     area.removeFromRight (space::m);
-    backButton.setBounds (area.removeFromRight (76).withSizeKeepingCentre (76, 34));
+    backButton.setBounds (area.removeFromRight (66).withSizeKeepingCentre (66, 32));
+    area.removeFromRight (space::m);
+    intensityKnob.setBounds (area.removeFromRight (72));
+    area.removeFromRight (space::s);
+    {
+        auto styleArea = area.removeFromRight (150);
+        styleLabelArea = styleArea.removeFromTop (styleArea.getHeight() / 2 - 2).withTrimmedTop (4);
+        styleBox.setBounds (styleArea.removeFromTop (28));
+    }
     area.removeFromRight (space::l);
 
     iconArea = area.removeFromLeft (area.getHeight());
-    area.removeFromLeft (space::l);
+    area.removeFromLeft (space::m);
     textArea = area;
 }
 
@@ -82,14 +112,18 @@ void RollChamber::paint (juce::Graphics& g)
     if (ufo != nullptr)
         ufo->drawWithin (g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
 
+    g.setColour (colour::textSecondary);
+    g.setFont (juce::Font (font::label (10.0f)));
+    g.drawText ("STYLE", styleLabelArea, juce::Justification::bottomLeft, false);
+
     auto text = textArea;
     auto titleArea = text.removeFromTop (text.getHeight() * 3 / 5);
 
     g.setColour (colour::textPrimary);
-    g.setFont (juce::Font (font::display (30.0f)));
-    g.drawFittedText (title, titleArea, juce::Justification::bottomLeft, 1, 0.8f);
+    g.setFont (juce::Font (font::display (26.0f)));
+    g.drawFittedText (title, titleArea, juce::Justification::bottomLeft, 1, 0.7f);
 
     g.setColour (colour::textSecondary);
-    g.setFont (juce::Font (font::body (12.5f)));
-    g.drawFittedText (summary, text.withTrimmedTop (2), juce::Justification::topLeft, 1, 0.9f);
+    g.setFont (juce::Font (font::body (12.0f)));
+    g.drawFittedText (summary, text.withTrimmedTop (2), juce::Justification::topLeft, 2, 0.85f);
 }

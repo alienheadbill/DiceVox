@@ -49,4 +49,8 @@ public:
 
     // Host tempo in BPM, sent before every block (tempo-synced effects use it).
     virtual void setHostTempo (double /*bpm*/) {}
+
+    // Song position in quarter notes at the start of the next block, sent only
+    // while the host is playing (beat-locked effects line up with it).
+    virtual void setHostPosition (double /*ppq*/) {}
 };

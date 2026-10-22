@@ -3,16 +3,25 @@
 Vocal multi-effect plugin (VST3). One **ROLL** button generates a new random
 effect chain each click; every effect also has its own on-screen controls.
 
-Current status: **usable v1 (test build).** Five effects (Filter, Drive, Chorus,
-Delay, Reverb), each with an ON/OFF switch and knobs on screen. **ROLL** picks 2–4
-of them with settings that suit vocals and names the result ("Gritty Wide Echo
-Hall"); **BACK** returns to the previous roll. Windows gets a one-click installer
+Current status: **v2 (test build).** Nine effects (Filter, Pitch, Drive, Lo-Fi,
+Chorus, Chop, Reverse, Delay, Reverb), each with an ON/OFF switch, a dice lock and
+knobs on screen. **ROLL** builds a chain with settings that suit vocals and names
+the result ("Dusty Deep Echo Hall"), steered by:
+
+- **Style:** Any Vibe, Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom or
+  Glitch. Each one changes which effects come up and how they're set, and always
+  brings its signature effect (reverb, lo-fi, pitch, lo-fi or chop).
+- **Intensity:** 0 % rolls 1–3 subtle effects, 100 % rolls 3–5 effects pushed hard.
+- **Locks:** a locked effect keeps its on/off state and settings.
+
+**BACK** returns to the previous roll. Windows gets a one-click installer
 (`DiceVox-Setup.exe`).
 
 ### Effect parameters (on screen and host automation)
 
 Every effect is off by default, so it never changes the sound of an existing project.
-Parameters are appended in chain order; never reorder or remove them after release.
+Parameters are appended in release order (v1 effects, then v2 effects, then the dice
+controls); never reorder or remove them after release.
 
 | ID | Host name | Range | Default |
 |---|---|---|---|
@@ -33,10 +42,29 @@ Parameters are appended in chain order; never reorder or remove them after relea
 | `reverb_on` | Reverb On | off / on | off |
 | `reverb_size` | Reverb Size | 0 – 100 % (room to hall) | 50 % |
 | `reverb_mix` | Reverb Mix | 0 – 100 % | 25 % |
+| `pitch_on` | Pitch On | off / on | off |
+| `pitch_shift` | Pitch Shift | −12 – +12 semitones (grain shifter, no formant correction) | −12 |
+| `pitch_mix` | Pitch Mix | 0 – 100 % (constant-power blend; 100 % = only the pitched voice) | 40 % |
+| `lofi_on` | Lo-Fi On | off / on | off |
+| `lofi_crush` | Lo-Fi Crush | 0 – 100 % (16 → 4 bits, 44.1 → 4.4 kHz, darkening low-pass) | 50 % |
+| `lofi_wobble` | Lo-Fi Wobble | 0 – 100 % (tape wow + flutter, up to about ±3.5 ms) | 30 % |
+| `lofi_mix` | Lo-Fi Mix | 0 – 100 % (crushed vs clean) | 100 % |
+| `chop_on` | Chop On | off / on | off |
+| `chop_rate` | Chop Rate | 1/32, 1/16, 1/16T, 1/8, 1/8T, 1/4 (locks to the song position while playing) | 1/16 |
+| `chop_depth` | Chop Depth | 0 – 100 % (100 % = silent gaps; 2 ms edges) | 80 % |
+| `reverse_on` | Reverse On | off / on | off |
+| `reverse_length` | Reverse Length | 1/16, 1/8, 1/4, 1/2 slices (max 1.5 s) | 1/4 |
+| `reverse_mix` | Reverse Mix | 0 – 100 % reversed level (the dry vocal stays at full level) | 40 % |
+| `dice_intensity` | Dice Intensity | 0 – 100 % | 50 % |
+| `dice_style` | Dice Style | Any Vibe, Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom, Glitch | Any Vibe |
+| `dice_lock_<effect>` | Dice Lock … | off / on, one per effect | off |
 
-Chain order: Filter → Drive → Chorus → Delay → Reverb. No effect adds latency.
-The roll's name is saved with the project; BACK history is not (it starts empty
-when a project opens).
+Chain order: Filter → Pitch → Drive → Lo-Fi → Chorus → Chop → Reverse → Delay → Reverb.
+No effect reports latency. The pitch and reverse effects trail the dry vocal
+slightly (by design: they're doubles and swells, not replacements for it), so
+their delay isn't compensated. The roll's name is saved with the project; BACK
+history isn't (it starts empty when a project opens). ROLL and BACK never change
+Input, Mix, Output, Bypass or the dice controls.
 
 Resonance safety: the low cut and high cut share one Resonance control. When the
 cutoffs move close together their peaks would stack (up to +16 dB), so each
@@ -110,7 +138,7 @@ Tests for the updater: `powershell -File tools/updater/Test-Updater.ps1`
 ```
 Source/
   PluginProcessor.*   audio engine: input gain → dry tap → FxChain → mix → output gain
-  PluginEditor.*      DiceVox editor layout (800x530 design canvas, scales to 150%)
+  PluginEditor.*      DiceVox editor layout (860x690 design canvas, scales 80%-130%)
   Params.*            global parameter IDs + full parameter layout
   modules/
     EffectModule.h    interface every effect implements
@@ -122,8 +150,14 @@ Source/
     ChorusModule.*    stereo doubler / chorus
     DelayModule.*     tempo-synced ping-pong delay
     ReverbModule.*    room-to-hall reverb
+    PitchModule.*     pitch shift up/down (pitched doubles or the whole voice)
+    LoFiModule.*      bitcrush, sample-rate crunch, tape wobble
+    ChopModule.*      tempo-synced stutter gate
+    ReverseModule.*   tempo-synced reverse slices
+  dsp/
+    GrainShifter.*    two-head delay-line pitch shifter (also plays reverse)
   dice/
-    DiceRoller.*      ROLL: picks 2-4 effects + vocal-friendly settings + a name
+    DiceRoller.*      ROLL: styles, intensity, locks, vocal-friendly settings, names
   ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
     AHETheme.h        design tokens: colours, spacing, radii, font roles
     AHEFonts.*        embedded Inter + Barlow Condensed (identical text on every computer)
@@ -132,8 +166,8 @@ Source/
     AHEHeader.*       shared header bar (mark, product name, maker mark)
     AHEKnob.*         labelled knob bound to one parameter (units, reset, typing)
   ui/
-    RollChamber.*     ROLL / BACK and the current roll's name
-    EffectCard.*      one effect on screen: ON/OFF switch + knobs
+    RollChamber.*     ROLL / BACK, style, intensity and the current roll's name
+    EffectCard.*      one effect on screen: ON/OFF switch, dice lock, knobs
 installer/DiceVox.iss Inno Setup script for DiceVox-Setup.exe (built by CI)
 docs/review/          DSP review evidence (measured responses)
 design/assets/        approved brand SVGs, compiled into the plug-in
@@ -168,6 +202,7 @@ Reworked around getting a usable plug-in first, then making it better by ear.
 
 | Step | Scope |
 |---|---|
-| v1 (this build) | 5 effects on screen, ROLL + BACK, Windows installer ✅ |
-| Next | Founder feedback by ear: tune the dice ranges, add per-effect locks, a "keep it subtle / go wild" intensity |
-| Later | More effects (pitch / formant, reverse, stutter, lo-fi), presets, macOS installer |
+| v1 | 5 effects on screen, ROLL + BACK, Windows installer ✅ |
+| v2 (this build) | Pitch, Lo-Fi, Chop, Reverse; dice styles, intensity, locks ✅ |
+| Next | Founder feedback by ear: tune styles and ranges; maybe pitch correction (auto-tune), formant control, favourites |
+| Later | Presets, more effects (e.g. vocoder, harmonizer), macOS installer |

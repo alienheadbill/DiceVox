@@ -1,6 +1,7 @@
 #include "EffectCard.h"
 #include "ahe/AHELookAndFeel.h"
 #include "modules/FxChain.h"
+#include "Params.h"
 
 using namespace ahe::theme;
 
@@ -25,6 +26,18 @@ EffectCard::EffectCard (juce::AudioProcessorValueTreeState& state, const juce::S
     // Repaint the card outline when the effect is switched (automation and dice included).
     power.onStateChange = [this] { repaint(); };
 
+    // Dice lock: ROLL leaves a locked effect exactly as it is.
+    const auto lockId = ParamIDs::diceLock (moduleId);
+    lock.getProperties().set (roleProperty, role::lock);
+    lock.setClickingTogglesState (true);
+    lock.setTooltip ("Lock " + cardTitle + ": ROLL keeps it exactly as it is (on or off, same settings) "
+                     "and only rerolls the other effects.");
+    lock.setTitle ("Lock " + cardTitle);
+    lock.setWantsKeyboardFocus (true);
+    lock.setComponentID (lockId);
+    addAndMakeVisible (lock);
+    lockAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, lockId, lock);
+
     for (auto& spec : knobSpecs)
     {
         auto knob = std::make_unique<ahe::Knob> (state, spec.paramId, spec.name, spec.tooltip);
@@ -42,9 +55,12 @@ void EffectCard::resized()
     auto area = getLocalBounds().reduced (space::s + 2, space::s);
 
     auto top = area.removeFromTop (24);
-    power.setBounds (top.removeFromRight (58));
+    power.setBounds (top.removeFromRight (54));
+    top.removeFromRight (space::xs);
+    lock.setBounds (top.removeFromRight (24).withSizeKeepingCentre (24, 22));
+    top.removeFromRight (space::xs);
     titleArea = top;
-    area.removeFromTop (space::s);
+    area.removeFromTop (space::xs);
 
     // Two knobs per row; a lone last knob is centred.
     const int numKnobs = (int) knobs.size();
@@ -78,6 +94,6 @@ void EffectCard::paint (juce::Graphics& g)
                                  on ? colour::purpleSoft.withAlpha (0.65f) : colour::border);
 
     g.setColour (on ? colour::textPrimary : colour::textSecondary);
-    g.setFont (juce::Font (font::label (12.0f)));
-    g.drawText (title.toUpperCase(), titleArea, juce::Justification::centredLeft, true);
+    g.setFont (juce::Font (font::label (11.5f)));
+    g.drawFittedText (title.toUpperCase(), titleArea, juce::Justification::centredLeft, 1, 0.75f);
 }

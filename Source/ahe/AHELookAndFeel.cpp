@@ -56,6 +56,16 @@ namespace ahe
         set (juce::TooltipWindow::backgroundColourId, colour::raised);
         set (juce::TooltipWindow::textColourId, colour::textPrimary);
         set (juce::TooltipWindow::outlineColourId, colour::border);
+
+        set (juce::ComboBox::backgroundColourId, colour::raised);
+        set (juce::ComboBox::textColourId, colour::textPrimary);
+        set (juce::ComboBox::outlineColourId, colour::border);
+        set (juce::ComboBox::arrowColourId, colour::textSecondary);
+        set (juce::ComboBox::focusedOutlineColourId, colour::purpleSoft);
+        set (juce::PopupMenu::backgroundColourId, colour::raised);
+        set (juce::PopupMenu::textColourId, colour::textPrimary);
+        set (juce::PopupMenu::highlightedBackgroundColourId, colour::brandPurple.withAlpha (0.55f));
+        set (juce::PopupMenu::highlightedTextColourId, colour::textPrimary);
     }
 
     // ---------------------------------------------------------------- knobs
@@ -181,6 +191,13 @@ namespace ahe
                 g.fillRoundedRectangle (area, radius::small);
             }
         }
+        else if (hasRole (b, role::lock))
+        {
+            const bool on = b.getToggleState();
+            auto fill = on ? colour::brandPurple.withAlpha (0.35f) : colour::raised;
+            if (enabled && (isHighlighted || isDown)) fill = fill.brighter (0.1f);
+            drawPanel (g, area, radius::small * 0.7f, fill, on ? colour::purpleSoft : colour::border);
+        }
         else if (hasRole (b, role::primary))
         {
             // Main action: solid brand purple, lighter on hover / press.
@@ -218,6 +235,28 @@ namespace ahe
 
         auto textColour = (b.getToggleState() || hasRole (b, role::primary)) ? colour::textPrimary : colour::textSecondary;
         if (! enabled) textColour = colour::textMuted;
+
+        if (hasRole (b, role::lock))
+        {
+            // Padlock: body + shackle. Locked = closed shackle, unlocked = open (lifted).
+            const bool on = b.getToggleState();
+            auto icon = b.getLocalBounds().toFloat().withSizeKeepingCentre (11.0f, 13.0f);
+            auto body = icon.removeFromBottom (7.5f);
+            const float r = 3.6f;
+            const float cx = body.getCentreX() + (on ? 0.0f : 2.0f);
+            const float top = body.getY() - (on ? 0.0f : 2.5f);
+            juce::Path shackle;
+            shackle.startNewSubPath (cx - r, on ? body.getY() : top + 1.0f); // open: left leg free
+            shackle.lineTo (cx - r, top);
+            shackle.addCentredArc (cx, top, r, r, 0.0f,
+                                   -juce::MathConstants<float>::halfPi, juce::MathConstants<float>::halfPi, false);
+            shackle.lineTo (cx + r, body.getY());
+
+            g.setColour (! enabled ? colour::textMuted : on ? colour::textPrimary : colour::textSecondary);
+            g.strokePath (shackle, juce::PathStrokeType (1.6f));
+            g.fillRoundedRectangle (body, 1.5f);
+            return;
+        }
 
         const auto font  = getTextButtonFont (b, b.getHeight());
         const auto badge = b.getProperties()["ahe.badge"].toString();
