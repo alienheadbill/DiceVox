@@ -216,7 +216,7 @@ void DiceVoxEditor::Content::resized()
     // Bottom row: bypass on the left, Input / Mix / Output in the middle
     bottomArea = area.removeFromBottom (96);
     {
-        auto row = bottomArea.withTrimmedTop (space::s);
+        auto row = bottomArea.withTrimmedTop (space::s).reduced (space::l, 0);
         bypassSwitch.setBounds (row.removeFromLeft (140).withSizeKeepingCentre (140, 28));
 
         constexpr int knobW = 100;
@@ -277,6 +277,13 @@ void DiceVoxEditor::Content::paint (juce::Graphics& g)
         g.setGradientFill (glow);
         g.fillRect (bounds);
 
+        // A faint navigation grid, like the floor of a control deck.
+        g.setColour (colour::purpleSoft.withAlpha (0.035f));
+        for (float gx = 0.0f; gx < bounds.getWidth(); gx += 32.0f)
+            g.fillRect (gx, 0.0f, 1.0f, bounds.getHeight());
+        for (float gy = 0.0f; gy < bounds.getHeight(); gy += 32.0f)
+            g.fillRect (0.0f, gy, bounds.getWidth(), 1.0f);
+
         for (const auto& s : stars)
         {
             g.setColour (juce::Colours::white.withAlpha (s.alpha));
@@ -284,13 +291,13 @@ void DiceVoxEditor::Content::paint (juce::Graphics& g)
         }
     }
 
-    // Divider above the bottom row + build info
-    g.setColour (colour::border);
-    g.fillRect (bottomArea.getX(), bottomArea.getY(), bottomArea.getWidth(), 1);
+    // Bottom console: a glass strip behind Bypass and Input / Mix / Output.
+    ahe::LookAndFeel::drawGlass (g, bottomArea.toFloat().withTrimmedTop ((float) space::xs), radius::card,
+                                 colour::purpleSoft.withAlpha (0.18f), true);
 
     g.setColour (colour::textMuted);
-    g.setFont (juce::Font (font::body (11.0f)));
+    g.setFont (juce::Font (font::label (9.5f)));
     const auto dot = juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  "));
-    g.drawText ("v" JucePlugin_VersionString + dot + "alien vocal lab" + dot + "test build",
-                bottomArea.withTrimmedTop (space::s), juce::Justification::centredRight, false);
+    g.drawText (juce::String ("v" JucePlugin_VersionString + dot + "alien vocal lab" + dot + "test build").toUpperCase(),
+                bottomArea.withTrimmedTop (space::s).withTrimmedRight (space::l), juce::Justification::centredRight, false);
 }

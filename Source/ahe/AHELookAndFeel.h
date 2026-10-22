@@ -43,6 +43,8 @@ namespace ahe
         void drawButtonText (juce::Graphics&, juce::TextButton&, bool isHighlighted, bool isDown) override;
         void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool isHighlighted, bool isDown) override;
         juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+        void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
+                           int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
 
         // Any text drawn with JUCE's default font (typed values, tooltips, menus)
         // uses the embedded Inter instead of the system font.
@@ -67,6 +69,11 @@ namespace ahe
                                juce::Colour fill = theme::colour::panel,
                                juce::Colour outline = theme::colour::border);
         static void drawFocusRing (juce::Graphics&, juce::Rectangle<float> area, float cornerRadius);
+
+        // "Alien tech" glass: frosted gradient, top sheen, hairline outline and,
+        // optionally, HUD corner brackets.
+        static void drawGlass (juce::Graphics&, juce::Rectangle<float> area, float cornerRadius,
+                               juce::Colour outline = theme::colour::border, bool brackets = false);
 
     private:
         bool keyboardNavigationActive = false;

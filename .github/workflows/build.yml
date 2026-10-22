@@ -48,8 +48,19 @@ jobs:
 
       - name: Run offline tests
         shell: bash
+        env:
+          # The tests also render the editor to PNGs here, for design review.
+          DICEVOX_SNAPSHOT_DIR: ui-snapshots
         run: |
           if [ -f build/Release/DiceVoxTests.exe ]; then build/Release/DiceVoxTests.exe; else build/DiceVoxTests; fi
+
+      - name: Upload UI snapshots
+        if: matrix.name == 'Windows' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiceVox-UI-Snapshots
+          path: ui-snapshots/
+          if-no-files-found: ignore
 
       - name: Stage package (DiceVox.vst3 + font licences)
         shell: bash

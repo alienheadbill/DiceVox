@@ -13,11 +13,13 @@
 //                 1.2 kHz). Low = flying-saucer wobble, high = metallic bells.
 //   Android       robot voice: a resonant comb tuned to one pitch (60 ..
 //                 240 Hz), so every word rings at the same metallic note.
-//   Transmission  space radio: band-limited to 500 Hz - 3 kHz, slowly fading
-//                 in and out, with crackle. Amount = how rough the signal is.
+//   Transmission  space radio: a steep radio band (300 Hz - 4 kHz, narrowing
+//                 to 700 Hz - 2.2 kHz with Amount), gentle saturation and a
+//                 distant-signal fade + flutter. It adds no noise of its own
+//                 (an earlier crackle version sounded like static).
 // Amount sets the character per mode; Mix blends with the clean vocal.
-// Everything runs per sample (crackle from a seeded generator), so the sound
-// doesn't depend on the host's block size. Adds no latency.
+// Everything runs per sample, so the sound doesn't depend on the host's
+// block size. Adds no latency.
 // ---------------------------------------------------------------------------
 class AlienModule : public EffectModule
 {
@@ -31,6 +33,8 @@ public:
 
     static float ringFrequency (float amountPercent);  // Saucer carrier, Hz
     static float robotFrequency (float amountPercent); // Android comb pitch, Hz
+    static float transmissionLowCut (float amountPercent);  // Hz
+    static float transmissionHighCut (float amountPercent); // Hz
 
     juce::String getId() const override { return "alien"; }
     juce::String getDisplayName() const override { return "Alien Voice"; }
@@ -58,9 +62,7 @@ private:
     std::vector<std::vector<float>> comb;
     int combMask = 0, combWrite = 0;
 
-    // Transmission: band-pass states, fade LFO, crackle
-    std::array<float, 2> hp {}, lp1 {}, lp2 {};
-    float crackle = 0.0f;
-    double fadePhase = 0.0;
-    juce::Random noise;
+    // Transmission: band-pass states (two high-pass, two low-pass), fade + flutter LFOs
+    std::array<float, 2> hpA {}, hpB {}, lp1 {}, lp2 {};
+    double fadePhase = 0.0, flutterPhase = 0.0;
 };

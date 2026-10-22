@@ -73,6 +73,8 @@ namespace ahe
     void LookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                                         float pos, float startAngle, float endAngle, juce::Slider& slider)
     {
+        // "Scanner" knob: an outer ring of ticks that light up to the value, a
+        // thin glowing value arc, a dark lens-like body and a lit pointer.
         const bool enabled = slider.isEnabled();
         const bool active  = enabled && slider.isMouseOverOrDragging();
         const bool focused = enabled && shouldShowFocus (slider);
@@ -81,15 +83,10 @@ namespace ahe
         const float size   = juce::jmin (bounds.getWidth(), bounds.getHeight());
         const auto  centre = bounds.getCentre();
         const float radius = size * 0.5f;
-        const float trackW = juce::jlimit (3.0f, 7.0f, radius * 0.12f);
-        const float arcR   = radius - trackW * 0.5f;
+        const float trackW = juce::jlimit (2.0f, 4.0f, radius * 0.08f);
+        const float arcR   = radius - juce::jmax (4.0f, radius * 0.17f);
 
-        // Track (full range)
-        g.setColour (colour::border);
-        g.strokePath (makeArc (centre, arcR, startAngle, endAngle),
-                      juce::PathStrokeType (trackW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        // Value arc. Bipolar ranges (e.g. -24..+24 dB) fill from the centre/default
+        // Value range. Bipolar ranges (e.g. -24..+24 dB) fill from the centre/default
         // so "0 dB = untouched" reads at a glance; unipolar ranges fill from the start.
         const double min = slider.getMinimum(), max = slider.getMaximum();
         const bool bipolar = min < 0.0 && max > 0.0;
@@ -97,38 +94,68 @@ namespace ahe
         const float fromA  = startAngle + origin * (endAngle - startAngle);
         const float toA    = startAngle + pos    * (endAngle - startAngle);
 
+        // Tick ring: lit between the origin and the value (every fifth tick longer).
+        {
+            const int numTicks = radius > 28.0f ? 31 : 21;
+            const float lo = juce::jmin (origin, pos), hi = juce::jmax (origin, pos);
+            for (int i = 0; i < numTicks; ++i)
+            {
+                const float t = (float) i / (float) (numTicks - 1);
+                const float a = startAngle + t * (endAngle - startAngle);
+                const bool lit = enabled && t >= lo - 1.0e-4f && t <= hi + 1.0e-4f && hi - lo > 1.0e-4f;
+                const float inner = radius - ((i % 5 == 0) ? juce::jmax (3.5f, radius * 0.12f) : juce::jmax (2.0f, radius * 0.07f));
+                g.setColour (lit ? colour::purpleSoft.withAlpha (active ? 1.0f : 0.85f) : colour::border.brighter (0.1f));
+                g.drawLine ({ centre.getPointOnCircumference (inner, a), centre.getPointOnCircumference (radius, a) }, 1.2f);
+            }
+        }
+
+        // Track (full range), hairline
+        g.setColour (colour::border);
+        g.strokePath (makeArc (centre, arcR, startAngle, endAngle),
+                      juce::PathStrokeType (trackW * 0.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Value arc: a soft glow under a crisp core.
         if (std::abs (toA - fromA) > 0.001f)
         {
-            auto valueColour = active ? colour::purpleSoft : colour::brandPurple;
+            auto valueColour = active ? colour::purpleSoft : colour::brandPurple.brighter (0.15f);
             if (! enabled) valueColour = colour::textMuted;
 
+            const auto arc = makeArc (centre, arcR, juce::jmin (fromA, toA), juce::jmax (fromA, toA));
+            if (enabled)
+            {
+                g.setColour (colour::brandPurple.withAlpha (active ? 0.35f : 0.22f));
+                g.strokePath (arc, juce::PathStrokeType (trackW * 3.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
             g.setColour (valueColour);
-            g.strokePath (makeArc (centre, arcR, juce::jmin (fromA, toA), juce::jmax (fromA, toA)),
-                          juce::PathStrokeType (trackW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.strokePath (arc, juce::PathStrokeType (trackW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
 
-        // Centre tick for bipolar knobs (marks the default / unity point)
-        if (bipolar)
-        {
-            const auto tickOuter = centre.getPointOnCircumference (radius + 1.5f, fromA);
-            const auto tickInner = centre.getPointOnCircumference (radius - trackW - 2.5f, fromA);
-            g.setColour (colour::textMuted);
-            g.drawLine ({ tickInner, tickOuter }, 1.5f);
-        }
-
-        // Body
-        const float bodyR = radius - trackW - juce::jmax (4.0f, radius * 0.1f);
+        // Body: a dark lens, lit from the top left, with a faint inner ring.
+        const float bodyR = arcR - trackW - juce::jmax (3.0f, radius * 0.09f);
         auto body = juce::Rectangle<float> (bodyR * 2.0f, bodyR * 2.0f).withCentre (centre);
-        g.setColour (active ? colour::raised.brighter (0.08f) : colour::raised);
+        juce::ColourGradient lens (colour::raised.brighter (active ? 0.22f : 0.12f), body.getX() + bodyR * 0.5f, body.getY() + bodyR * 0.3f,
+                                   colour::canvas, body.getRight(), body.getBottom(), true);
+        g.setGradientFill (lens);
         g.fillEllipse (body);
-        g.setColour (active ? colour::purpleSoft.withAlpha (0.6f) : colour::border);
-        g.drawEllipse (body, 1.2f);
+        g.setColour (active ? colour::purpleSoft.withAlpha (0.7f) : colour::border.brighter (0.15f));
+        g.drawEllipse (body, 1.0f);
+        g.setColour (colour::purpleSoft.withAlpha (0.10f));
+        g.drawEllipse (body.reduced (bodyR * 0.22f), 1.0f);
 
-        // Pointer
+        // Pointer: a line on the body, and a lit dot riding the value arc.
         const auto p1 = centre.getPointOnCircumference (bodyR * 0.30f, toA);
-        const auto p2 = centre.getPointOnCircumference (bodyR * 0.86f, toA);
+        const auto p2 = centre.getPointOnCircumference (bodyR * 0.82f, toA);
         g.setColour (enabled ? colour::textPrimary : colour::textMuted);
-        g.drawLine ({ p1, p2 }, juce::jmax (2.0f, trackW * 0.55f));
+        g.drawLine ({ p1, p2 }, juce::jmax (1.6f, trackW * 0.6f));
+
+        if (enabled)
+        {
+            const auto tip = centre.getPointOnCircumference (arcR, toA);
+            g.setColour (colour::purpleSoft.withAlpha (0.35f));
+            g.fillEllipse (juce::Rectangle<float> (trackW * 3.6f, trackW * 3.6f).withCentre (tip));
+            g.setColour (colour::textPrimary);
+            g.fillEllipse (juce::Rectangle<float> (trackW * 1.5f, trackW * 1.5f).withCentre (tip));
+        }
 
         // Keyboard focus: dashed ring outside the arc (shape, not just colour)
         if (focused)
@@ -179,41 +206,63 @@ namespace ahe
         {
             if (b.getToggleState())
             {
-                // Selected tab: soft fill + solid purple underline
-                g.setColour (colour::brandPurple.withAlpha (0.14f));
+                // Selected tab: faint glass + a glowing underline
+                g.setColour (colour::brandPurple.withAlpha (0.12f));
                 g.fillRoundedRectangle (area, radius::small);
-                g.setColour (colour::brandPurple);
-                g.fillRoundedRectangle (area.removeFromBottom (2.5f).reduced (8.0f, 0.0f), 1.25f);
+                auto line = area.removeFromBottom (2.0f).reduced (10.0f, 0.0f);
+                g.setColour (colour::brandPurple.withAlpha (0.35f));
+                g.fillRoundedRectangle (line.expanded (0.0f, 2.0f).translated (0.0f, -1.0f), 2.0f);
+                g.setColour (colour::purpleSoft);
+                g.fillRoundedRectangle (line, 1.0f);
             }
             else if (enabled && (isHighlighted || isDown))
             {
-                g.setColour (colour::raised);
+                g.setColour (colour::raised.withAlpha (0.7f));
                 g.fillRoundedRectangle (area, radius::small);
             }
         }
         else if (hasRole (b, role::lock) || hasRole (b, role::segment))
         {
+            // Small glass chips; the selected / locked one is lit purple.
             const bool on = b.getToggleState();
-            auto fill = on ? colour::brandPurple.withAlpha (0.35f) : colour::raised;
-            if (enabled && (isHighlighted || isDown)) fill = fill.brighter (0.1f);
-            drawPanel (g, area, radius::small * 0.7f, fill, on ? colour::purpleSoft : colour::border);
+            if (on)
+            {
+                juce::ColourGradient lit (colour::brandPurple.withAlpha (0.55f), area.getX(), area.getY(),
+                                          colour::brandPurple.withAlpha (0.25f), area.getX(), area.getBottom(), false);
+                g.setGradientFill (lit);
+                g.fillRoundedRectangle (area, radius::small * 0.7f);
+                g.setColour (colour::purpleSoft);
+                g.drawRoundedRectangle (area.reduced (0.5f), radius::small * 0.7f, 1.0f);
+            }
+            else
+            {
+                drawGlass (g, area, radius::small * 0.7f,
+                           enabled && (isHighlighted || isDown) ? colour::purpleSoft.withAlpha (0.5f) : colour::border, false);
+            }
         }
         else if (hasRole (b, role::primary))
         {
-            // Main action: solid brand purple, lighter on hover / press.
-            auto fill = colour::brandPurple;
-            if (enabled && isDown)             fill = fill.brighter (0.25f);
-            else if (enabled && isHighlighted) fill = fill.brighter (0.12f);
-            drawPanel (g, area, radius::card, enabled ? fill : colour::panel,
-                       enabled ? colour::purpleSoft : colour::border);
+            // Main action: an energy-cell button, purple gradient with a bright rim
+            // and a highlight along the top.
+            const float r = radius::card;
+            auto top = colour::brandPurple.brighter (0.25f), bottom = colour::brandPurple.darker (0.45f);
+            if (enabled && isDown)             { top = top.darker (0.15f); bottom = bottom.darker (0.15f); }
+            else if (enabled && isHighlighted) { top = top.brighter (0.15f); bottom = bottom.brighter (0.15f); }
+            if (! enabled) top = bottom = colour::panel;
+
+            juce::ColourGradient cell (top, area.getX(), area.getY(), bottom, area.getX(), area.getBottom(), false);
+            g.setGradientFill (cell);
+            g.fillRoundedRectangle (area, r);
+            g.setColour (juce::Colours::white.withAlpha (enabled ? 0.22f : 0.05f));
+            g.fillRoundedRectangle (area.getX() + r, area.getY() + 2.0f, area.getWidth() - 2.0f * r, 1.5f, 0.75f);
+            g.setColour (enabled ? colour::purpleSoft : colour::border);
+            g.drawRoundedRectangle (area.reduced (0.5f), r, 1.2f);
         }
         else
         {
-            auto fill = colour::raised;
-            if (enabled && isDown)             fill = fill.brighter (0.12f);
-            else if (enabled && isHighlighted) fill = fill.brighter (0.06f);
-            drawPanel (g, area, radius::small, enabled ? fill : colour::panel,
-                       enabled && isHighlighted ? colour::purpleSoft.withAlpha (0.6f) : colour::border);
+            auto outline = colour::border;
+            if (enabled && (isHighlighted || isDown)) outline = colour::purpleSoft.withAlpha (isDown ? 0.9f : 0.6f);
+            drawGlass (g, area, radius::small, outline, false);
         }
 
         if (enabled && shouldShowFocus (b))
@@ -308,16 +357,29 @@ namespace ahe
         auto area = b.getLocalBounds().toFloat().reduced (1.0f);
         const float r = area.getHeight() * 0.5f;
 
-        auto fill = active ? colour::alienGreen.withAlpha (0.12f) : colour::raised;
-        if (enabled && (isHighlighted || isDown)) fill = fill.brighter (0.08f);
-        drawPanel (g, area, r, fill, active ? colour::alienGreen.withAlpha (0.7f) : colour::border);
-
-        // Indicator: filled dot = processing, hollow ring with slash = bypassed.
-        auto dot = juce::Rectangle<float> (10.0f, 10.0f).withCentre ({ area.getX() + r + 2.0f, area.getCentreY() });
+        // Glass pill; when processing, a green hairline and a glowing LED.
         if (active)
         {
-            g.setColour (colour::alienGreen);
+            g.setColour (colour::alienGreen.withAlpha (enabled && (isHighlighted || isDown) ? 0.18f : 0.10f));
+            g.fillRoundedRectangle (area, r);
+            g.setColour (colour::alienGreen.withAlpha (0.75f));
+            g.drawRoundedRectangle (area.reduced (0.5f), r, 1.0f);
+        }
+        else
+        {
+            drawGlass (g, area, r, enabled && (isHighlighted || isDown) ? colour::purpleSoft.withAlpha (0.5f) : colour::border, false);
+        }
+
+        // Indicator: glowing dot = processing, hollow ring with slash = bypassed / off.
+        auto dot = juce::Rectangle<float> (9.0f, 9.0f).withCentre ({ area.getX() + r + 2.0f, area.getCentreY() });
+        if (active)
+        {
+            g.setColour (colour::alienGreen.withAlpha (0.30f));
+            g.fillEllipse (dot.expanded (3.5f));
+            g.setColour (colour::greenSoft);
             g.fillEllipse (dot);
+            g.setColour (colour::alienGreen);
+            g.drawEllipse (dot, 1.0f);
         }
         else
         {
@@ -371,7 +433,7 @@ namespace ahe
     void LookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
     {
         auto area = juce::Rectangle<int> (width, height).toFloat();
-        drawPanel (g, area.reduced (0.5f), 8.0f, colour::raised, colour::border);
+        drawPanel (g, area.reduced (0.5f), 8.0f, colour::raised, colour::purpleSoft.withAlpha (0.45f));
 
         juce::AttributedString s;
         s.append (text, juce::Font (font::body (12.5f)), colour::textPrimary);
@@ -440,6 +502,61 @@ namespace ahe
         g.fillRoundedRectangle (area, cornerRadius);
         g.setColour (outline);
         g.drawRoundedRectangle (area.reduced (0.5f), cornerRadius, 1.0f);
+    }
+
+    void LookAndFeel::drawGlass (juce::Graphics& g, juce::Rectangle<float> area, float cornerRadius,
+                                 juce::Colour outline, bool brackets)
+    {
+        // Frosted glass: a slightly lighter top fading to the panel colour, so
+        // the starfield behind still shows faintly.
+        juce::ColourGradient fill (colour::raised.withAlpha (0.66f), area.getX(), area.getY(),
+                                   colour::panel.withAlpha (0.82f), area.getX(), area.getBottom(), false);
+        g.setGradientFill (fill);
+        g.fillRoundedRectangle (area, cornerRadius);
+
+        // A faint sheen along the top edge, then the hairline outline.
+        if (area.getWidth() > 2.0f * cornerRadius + 4.0f)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            g.fillRect (area.getX() + cornerRadius, area.getY() + 1.0f, area.getWidth() - 2.0f * cornerRadius, 1.0f);
+        }
+        g.setColour (outline);
+        g.drawRoundedRectangle (area.reduced (0.5f), cornerRadius, 1.0f);
+
+        // HUD corner brackets just inside the rim.
+        if (brackets)
+        {
+            const float len = juce::jmin (12.0f, area.getWidth() * 0.12f, area.getHeight() * 0.2f);
+            const float in = juce::jmax (4.0f, cornerRadius * 0.45f);
+            auto inner = area.reduced (in);
+            juce::Path p;
+            p.startNewSubPath (inner.getX(), inner.getY() + len);       p.lineTo (inner.getX(), inner.getY());       p.lineTo (inner.getX() + len, inner.getY());
+            p.startNewSubPath (inner.getRight() - len, inner.getY());   p.lineTo (inner.getRight(), inner.getY());   p.lineTo (inner.getRight(), inner.getY() + len);
+            p.startNewSubPath (inner.getRight(), inner.getBottom() - len); p.lineTo (inner.getRight(), inner.getBottom()); p.lineTo (inner.getRight() - len, inner.getBottom());
+            p.startNewSubPath (inner.getX() + len, inner.getBottom());  p.lineTo (inner.getX(), inner.getBottom());  p.lineTo (inner.getX(), inner.getBottom() - len);
+            g.setColour (colour::purpleSoft.withAlpha (0.45f));
+            g.strokePath (p, juce::PathStrokeType (1.2f));
+        }
+    }
+
+    void LookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, bool isButtonDown,
+                                    int, int, int, int, juce::ComboBox& box)
+    {
+        auto area = juce::Rectangle<int> (width, height).toFloat().reduced (0.5f);
+        const bool hot = box.isEnabled() && (box.isMouseOver (true) || isButtonDown);
+        drawGlass (g, area, radius::small, hot ? colour::purpleSoft.withAlpha (0.6f) : colour::border, false);
+
+        // Chevron
+        const float cx = (float) width - 15.0f, cy = (float) height * 0.5f;
+        juce::Path chevron;
+        chevron.startNewSubPath (cx - 4.0f, cy - 2.0f);
+        chevron.lineTo (cx, cy + 2.0f);
+        chevron.lineTo (cx + 4.0f, cy - 2.0f);
+        g.setColour (hot ? colour::purpleSoft : colour::textSecondary);
+        g.strokePath (chevron, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        if (box.isEnabled() && shouldShowFocus (box))
+            drawFocusRing (g, area, radius::small);
     }
 
     void LookAndFeel::drawFocusRing (juce::Graphics& g, juce::Rectangle<float> area, float cornerRadius)

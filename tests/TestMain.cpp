@@ -1481,12 +1481,31 @@ int main()
                "click " + std::to_string (first) + ", one period later " + std::to_string (second));
     }
     {
-        // Transmission: a space-radio band (lows gone, mids kept).
+        // Transmission: a space-radio band (lows and highs gone, voice band kept).
         auto p = alienProcessor (AlienModule::transmission, 0.0f, 100.0f);
         auto q = alienProcessor (AlienModule::transmission, 0.0f, 100.0f);
-        const float low = gainDb (*p, 100.0, sampleRate), mid = gainDb (*q, 1500.0, sampleRate);
-        check (low < -8.0f && std::abs (mid) < 4.0f, "Alien Transmission is band-limited like a radio",
-               "100 Hz " + db (low) + ", 1.5 kHz " + db (mid));
+        auto r = alienProcessor (AlienModule::transmission, 0.0f, 100.0f);
+        const float low = gainDb (*p, 100.0, sampleRate), mid = gainDb (*q, 1500.0, sampleRate), high = gainDb (*r, 10000.0, sampleRate);
+        check (low < -12.0f && std::abs (mid) < 4.0f && high < -10.0f, "Alien Transmission is band-limited like a radio",
+               "100 Hz " + db (low) + ", 1.5 kHz " + db (mid) + ", 10 kHz " + db (high));
+    }
+    {
+        // Transmission never adds noise of its own (the old crackle sounded like
+        // static): silence stays exactly silent, and after a vocal burst the
+        // output dies away to nothing. Checked at full Amount.
+        auto p = alienProcessor (AlienModule::transmission, 100.0f, 100.0f);
+        juce::AudioBuffer<float> in (2, (int) (3.0 * sampleRate));
+        in.clear();
+        auto burst = sine (2, (int) (0.5 * sampleRate), 440.0, sampleRate, 0.5f);
+        for (int ch = 0; ch < 2; ++ch)
+            in.copyFrom (ch, (int) sampleRate, burst, ch, 0, burst.getNumSamples());
+        auto out = processAll (*p, in, sampleRate);
+        const float beforeBurst = out.getMagnitude (0, (int) sampleRate);
+        const float afterBurst  = out.getMagnitude ((int) (2.0 * sampleRate), (int) sampleRate);
+        const float duringBurst = out.getRMSLevel (0, (int) (1.1 * sampleRate), (int) (0.3 * sampleRate));
+        check (allFinite (out) && beforeBurst == 0.0f && afterBurst < 1.0e-6f && duringBurst > 0.05f,
+               "Alien Transmission adds no static: silence in, silence out",
+               "before " + std::to_string (beforeBurst) + ", after " + std::to_string (afterBurst) + ", during RMS " + std::to_string (duringBurst));
     }
     {
         // Every mode at the extremes, on loud noise: bounded, finite; Mix 0 untouched.
@@ -1707,6 +1726,38 @@ int main()
         std::cout << "  INFO  Filter CPU, one core: " << juce::String (settled, 3) << " % of real time settled, "
                   << juce::String (gliding, 3) << " % while cutoffs glide\n";
     }
+    // Optional: DICEVOX_SNAPSHOT_DIR=<folder> renders the editor to PNGs for
+    // design review (CI uploads them): SIMPLE, ADVANCED, and ADVANCED at 2x.
+    if (const auto shotDir = juce::SystemStats::getEnvironmentVariable ("DICEVOX_SNAPSHOT_DIR", {}); shotDir.isNotEmpty())
+    {
+        const juce::File dir (shotDir);
+        dir.createDirectory();
+
+        DiceVoxProcessor p;
+        setParam (p, ParamIDs::diceStyle, 6.0f); // Area 51
+        setParam (p, ParamIDs::diceLevel, 2.0f);
+        juce::Random rng (2026);
+        p.rollDice (rng);
+        setParam (p, ParamIDs::diceLock ("reverb"), 1.0f);
+
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+        auto* dv = dynamic_cast<DiceVoxEditor*> (editor.get());
+        auto shoot = [&] (const juce::String& name, float scale)
+        {
+            auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, scale);
+            auto file = dir.getChildFile (name);
+            file.deleteFile();
+            juce::FileOutputStream out (file);
+            const bool ok = out.openedOk() && juce::PNGImageFormat().writeImageToStream (image, out);
+            std::cout << (ok ? "  SNAP  " : "  SNAP FAILED  ") << name << " (" << image.getWidth() << "x" << image.getHeight() << ")\n";
+        };
+        shoot ("01-simple.png", 1.0f);
+        if (dv != nullptr)
+            dv->setAdvancedView (true);
+        shoot ("02-advanced.png", 1.0f);
+        shoot ("03-advanced-2x.png", 2.0f);
+    }
+
     std::cout << (failures == 0 ? "All tests passed.\n" : std::to_string (failures) + " test(s) failed.\n");
     return failures == 0 ? 0 : 1;
 }

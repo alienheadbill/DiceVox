@@ -91,11 +91,21 @@ void EffectCard::paint (juce::Graphics& g)
     const bool on = power.getToggleState();
     const auto area = getLocalBounds().toFloat().reduced (0.5f);
 
-    // A sci-fi module: slightly see-through (the starfield shows faintly), and
-    // when the effect is processing it powers up with a green rim and a green
-    // "power rail" along the top (green = processing is on).
-    ahe::LookAndFeel::drawPanel (g, area, radius::card, colour::panel.withAlpha (0.88f),
-                                 on ? colour::alienGreen.withAlpha (0.7f) : colour::border);
+    // A sci-fi module: frosted glass with HUD corner brackets (the starfield
+    // shows faintly through it). When the effect is processing it powers up with
+    // a green rim and a green "power rail" along the top (green = processing on).
+    ahe::LookAndFeel::drawGlass (g, area, radius::card,
+                                 on ? colour::alienGreen.withAlpha (0.7f) : colour::purpleSoft.withAlpha (0.18f), true);
+
+    // Hairline under the title row, fading out at both ends.
+    {
+        const float y = (float) titleArea.getBottom() + 4.0f;
+        juce::ColourGradient rule (colour::purpleSoft.withAlpha (0.0f), area.getX() + 8.0f, y,
+                                   colour::purpleSoft.withAlpha (0.0f), area.getRight() - 8.0f, y, false);
+        rule.addColour (0.5, colour::purpleSoft.withAlpha (on ? 0.35f : 0.2f));
+        g.setGradientFill (rule);
+        g.fillRect (area.getX() + 8.0f, y, area.getWidth() - 16.0f, 1.0f);
+    }
 
     if (on)
     {

@@ -136,7 +136,34 @@ float RollChamber::beamAmount() const
 
 void RollChamber::paint (juce::Graphics& g)
 {
-    ahe::LookAndFeel::drawPanel (g, getLocalBounds().toFloat().reduced (0.5f), radius::hero);
+    ahe::LookAndFeel::drawGlass (g, getLocalBounds().toFloat().reduced (0.5f), radius::hero,
+                                 colour::purpleSoft.withAlpha (0.3f), true);
+
+    // Scanner rings behind the UFO, with crosshair ticks: the "radar" it rolls from.
+    {
+        const auto c = iconArea.toFloat().getCentre();
+        const float base = (float) iconArea.getHeight() * 0.5f;
+        for (int i = 0; i < 3; ++i)
+        {
+            const float r = base * (0.75f + 0.38f * (float) i);
+            g.setColour (colour::purpleSoft.withAlpha (0.16f - 0.04f * (float) i));
+            g.drawEllipse (juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c), 1.0f);
+        }
+        g.setColour (colour::purpleSoft.withAlpha (0.18f));
+        const float outer = base * 1.55f, inner = base * 1.3f;
+        for (float a : { 0.0f, juce::MathConstants<float>::halfPi, juce::MathConstants<float>::pi, -juce::MathConstants<float>::halfPi })
+            g.drawLine ({ c.getPointOnCircumference (inner, a), c.getPointOnCircumference (outer, a) }, 1.0f);
+    }
+
+    // Energy glow behind ROLL (drawn here, so it can spill past the button's edge).
+    {
+        auto glowArea = rollButton.getBounds().toFloat();
+        for (int i = 3; i >= 1; --i)
+        {
+            g.setColour (colour::brandPurple.withAlpha (0.07f));
+            g.fillRoundedRectangle (glowArea.expanded (2.5f * (float) i), radius::card + 2.5f * (float) i);
+        }
+    }
 
     // Tractor beam under the UFO after a ROLL (purple light: green is kept for
     // "processing is on"), with the UFO bobbing as it beams.
@@ -188,7 +215,8 @@ void RollChamber::paint (juce::Graphics& g)
     g.setFont (juce::Font (font::display (26.0f)));
     g.drawFittedText (title, titleArea, juce::Justification::bottomLeft, 1, 0.7f);
 
-    g.setColour (colour::textSecondary);
-    g.setFont (juce::Font (font::body (12.0f)));
-    g.drawFittedText (summary, text.withTrimmedTop (2), juce::Justification::topLeft, 2, 0.85f);
+    // The active chain as a HUD read-out: small tracked capitals in soft purple.
+    g.setColour (colour::purpleSoft.withAlpha (0.9f));
+    g.setFont (juce::Font (font::label (10.5f)));
+    g.drawFittedText (summary.toUpperCase(), text.withTrimmedTop (3), juce::Justification::topLeft, 2, 0.85f);
 }

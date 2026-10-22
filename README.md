@@ -14,7 +14,9 @@ The view is saved with the project.
 
 Current status: **v2 (test build), the alien vocal lab.** Ten effects (Filter, Pitch,
 Drive, Lo-Fi, Alien Voice, Chorus, Chop, Reverse, Delay, Reverb), each with an
-ON/OFF switch, a dice lock and knobs on screen. The look is a starfield, effects
+ON/OFF switch, a dice lock and knobs on screen. The look is "alien tech": frosted-glass
+panels with HUD corner brackets, scanner knobs (tick rings + glowing arcs) over a starfield
+and deck grid; effects
 glow green while they're processing, and the UFO beams down each new roll. **ROLL**
 builds a chain with settings that suit vocals and names it ("Abducted Chipmunk
 Mothership"), steered by:
@@ -85,8 +87,8 @@ controls); never reorder or remove them after release.
 | `reverse_length` | Reverse Length | 1/16, 1/8, 1/4, 1/2 slices (max 1.5 s) | 1/4 |
 | `reverse_mix` | Reverse Mix | 0 – 100 % reversed level (the dry vocal stays at full level) | 40 % |
 | `alien_on` | Alien Voice On | off / on | off |
-| `alien_mode` | Alien Mode | Saucer (ring mod 20 Hz – 1.2 kHz), Android (robot comb 60 – 240 Hz), Transmission (500 Hz – 3 kHz radio band, fades, crackle) | Saucer |
-| `alien_amount` | Alien Amount | 0 – 100 % (carrier / robot note / roughness) | 50 % |
+| `alien_mode` | Alien Mode | Saucer (ring mod 20 Hz – 1.2 kHz), Android (robot comb 60 – 240 Hz), Transmission (steep radio band 300 Hz – 4 kHz narrowing to 700 Hz – 2.2 kHz, gentle saturation, distant-signal fade; no added noise) | Saucer |
+| `alien_amount` | Alien Amount | 0 – 100 % (carrier / robot note / how narrow and distant the radio is) | 50 % |
 | `alien_mix` | Alien Mix | 0 – 100 % | 60 % |
 | `dice_level` | Dice Intensity | Low, Medium, High | Medium |
 | `dice_style` | Dice Style | Any Vibe, Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom, Glitch, Area 51 | Any Vibe |

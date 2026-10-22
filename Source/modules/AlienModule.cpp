@@ -22,6 +22,16 @@ float AlienModule::ringFrequency (float amountPercent)
     return 20.0f * std::pow (60.0f, juce::jlimit (0.0f, 100.0f, amountPercent) / 100.0f); // 20 Hz .. 1.2 kHz
 }
 
+float AlienModule::transmissionLowCut (float amountPercent)
+{
+    return 300.0f * std::pow (700.0f / 300.0f, juce::jlimit (0.0f, 100.0f, amountPercent) / 100.0f); // 300 .. 700 Hz
+}
+
+float AlienModule::transmissionHighCut (float amountPercent)
+{
+    return 4000.0f * std::pow (2200.0f / 4000.0f, juce::jlimit (0.0f, 100.0f, amountPercent) / 100.0f); // 4 .. 2.2 kHz
+}
+
 float AlienModule::robotFrequency (float amountPercent)
 {
     return minRobotHz * std::pow (4.0f, juce::jlimit (0.0f, 100.0f, amountPercent) / 100.0f); // 60 .. 240 Hz
@@ -75,12 +85,12 @@ void AlienModule::reset()
         std::fill (c.begin(), c.end(), 0.0f);
     combWrite = 0;
 
-    hp.fill (0.0f);
+    hpA.fill (0.0f);
+    hpB.fill (0.0f);
     lp1.fill (0.0f);
     lp2.fill (0.0f);
-    crackle = 0.0f;
+    flutterPhase = 0.0;
     fadePhase = 0.0;
-    noise.setSeed (51); // same crackle every time: reproducible renders
 }
 
 void AlienModule::process (const juce::dsp::ProcessContextReplacing<float>& context)
@@ -90,13 +100,19 @@ void AlienModule::process (const juce::dsp::ProcessContextReplacing<float>& cont
     const int mode = juce::jlimit (0, 2, juce::roundToInt (modeChoice->load()));
 
     auto& block = context.getOutputBlock();
-    const auto numChannels = juce::jmin (block.getNumChannels(), comb.size(), hp.size());
+    const auto numChannels = juce::jmin (block.getNumChannels(), comb.size(), hpA.size());
     const auto numSamples  = block.getNumSamples();
     const auto twoPi = juce::MathConstants<double>::twoPi;
 
-    // Transmission band: 500 Hz .. 3 kHz.
-    const float hpCoeff = onePoleCoeff (500.0f, sampleRate);
-    const float lpCoeff = onePoleCoeff (juce::jmin (3000.0f, (float) (0.45 * sampleRate)), sampleRate);
+    // Transmission band edges move with Amount (computed per sample while it glides).
+    float hpCoeff = 0.0f, lpCoeff = 0.0f;
+    auto updateBand = [&] (float a01)
+    {
+        hpCoeff = onePoleCoeff (transmissionLowCut (a01 * 100.0f), sampleRate);
+        lpCoeff = onePoleCoeff (juce::jmin (transmissionHighCut (a01 * 100.0f), (float) (0.45 * sampleRate)), sampleRate);
+    };
+    updateBand (amount.getCurrentValue() / 100.0f);
+    const bool amountMoving = amount.isSmoothing();
 
     for (size_t i = 0; i < numSamples; ++i)
     {
@@ -119,16 +135,17 @@ void AlienModule::process (const juce::dsp::ProcessContextReplacing<float>& cont
         }
         else
         {
-            // Slow fading in and out, deeper with Amount.
-            fade = 1.0f - 0.4f * a01 * (0.5f + 0.5f * (float) std::sin (fadePhase));
-            fadePhase += twoPi * 0.35 / sampleRate;
-            if (fadePhase > twoPi)
-                fadePhase -= twoPi;
+            if (amountMoving)
+                updateBand (a01);
 
-            // Crackle: random pops that ring out briefly, more of them with Amount.
-            if (noise.nextFloat() < 0.0015f * a01)
-                crackle = (noise.nextFloat() * 2.0f - 1.0f) * 0.35f * a01;
-            crackle *= 0.92f;
+            // A distant signal: a slow fade in and out plus a light flutter,
+            // both deeper with Amount. Never any added noise.
+            fade = 1.0f - a01 * (0.25f * (0.5f + 0.5f * (float) std::sin (fadePhase))
+                                 + 0.12f * (0.5f + 0.5f * (float) std::sin (flutterPhase)));
+            fadePhase += twoPi * 0.3 / sampleRate;
+            flutterPhase += twoPi * 5.5 / sampleRate;
+            if (fadePhase > twoPi)    fadePhase -= twoPi;
+            if (flutterPhase > twoPi) flutterPhase -= twoPi;
         }
 
         for (size_t ch = 0; ch < numChannels; ++ch)
@@ -154,12 +171,17 @@ void AlienModule::process (const juce::dsp::ProcessContextReplacing<float>& cont
             }
             else
             {
-                const float driven = std::tanh ((x + crackle) * (1.0f + 2.0f * a01)) / (1.0f + a01);
-                hp[ch] += hpCoeff * (driven - hp[ch]);
-                const float band = driven - hp[ch];
-                lp1[ch] += lpCoeff * (band - lp1[ch]);
+                // Gentle saturation (unity for quiet signals, peaks rounded),
+                // then a steep radio band: two high-pass and two low-pass stages.
+                const float g = 1.0f + 1.5f * a01;
+                const float driven = std::tanh (g * x) / g;
+                hpA[ch] += hpCoeff * (driven - hpA[ch]);
+                const float hp1 = driven - hpA[ch];
+                hpB[ch] += hpCoeff * (hp1 - hpB[ch]);
+                const float hp2 = hp1 - hpB[ch];
+                lp1[ch] += lpCoeff * (hp2 - lp1[ch]);
                 lp2[ch] += lpCoeff * (lp1[ch] - lp2[ch]);
-                wet = 1.6f * lp2[ch] * fade; // make up the level the band-pass takes away
+                wet = 1.4f * lp2[ch] * fade; // make up the level the band takes away
             }
 
             x += m * (wet - x);
@@ -169,7 +191,7 @@ void AlienModule::process (const juce::dsp::ProcessContextReplacing<float>& cont
             combWrite = (combWrite + 1) & combMask;
     }
 
-    for (auto* states : { &hp, &lp1, &lp2 })
+    for (auto* states : { &hpA, &hpB, &lp1, &lp2 })
         for (auto& s : *states)
             if (std::abs (s) < 1.0e-15f)
                 s = 0.0f;
