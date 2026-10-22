@@ -17,6 +17,13 @@ the result ("Dusty Deep Echo Hall"), steered by:
 **BACK** returns to the previous roll. Windows gets a one-click installer
 (`DiceVox-Setup.exe`).
 
+**Presets:** the bar at the top of the window saves the current sound (**SAVE**),
+lists your presets (click the name) and steps through them (**<** / **>**). They're
+plain files in `Documents\AHE Audio\DiceVox\Presets` (`<name>.dicevox`), so you can
+back them up or share them. A preset holds the whole sound (every effect plus Input,
+Mix and Output), but not Bypass or the dice controls. BACK undoes a preset load.
+FL Studio's own preset saving and project recall also work, as before.
+
 ### Effect parameters (on screen and host automation)
 
 Every effect is off by default, so it never changes the sound of an existing project.
@@ -158,6 +165,8 @@ Source/
     GrainShifter.*    two-head delay-line pitch shifter (also plays reverse)
   dice/
     DiceRoller.*      ROLL: styles, intensity, locks, vocal-friendly settings, names
+  presets/
+    PresetStore.*     preset files (Documents/AHE Audio/DiceVox/Presets, *.dicevox)
   ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
     AHETheme.h        design tokens: colours, spacing, radii, font roles
     AHEFonts.*        embedded Inter + Barlow Condensed (identical text on every computer)
@@ -168,6 +177,7 @@ Source/
   ui/
     RollChamber.*     ROLL / BACK, style, intensity and the current roll's name
     EffectCard.*      one effect on screen: ON/OFF switch, dice lock, knobs
+    PresetBar.*       header preset bar: < menu > SAVE
 installer/DiceVox.iss Inno Setup script for DiceVox-Setup.exe (built by CI)
 docs/review/          DSP review evidence (measured responses)
 design/assets/        approved brand SVGs, compiled into the plug-in
@@ -203,6 +213,6 @@ Reworked around getting a usable plug-in first, then making it better by ear.
 | Step | Scope |
 |---|---|
 | v1 | 5 effects on screen, ROLL + BACK, Windows installer ✅ |
-| v2 (this build) | Pitch, Lo-Fi, Chop, Reverse; dice styles, intensity, locks ✅ |
+| v2 (this build) | Pitch, Lo-Fi, Chop, Reverse; dice styles, intensity, locks; presets ✅ |
 | Next | Founder feedback by ear: tune styles and ranges; maybe pitch correction (auto-tune), formant control, favourites |
-| Later | Presets, more effects (e.g. vocoder, harmonizer), macOS installer |
+| Later | Factory presets, more effects (e.g. vocoder, harmonizer), macOS installer |

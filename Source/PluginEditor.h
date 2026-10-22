@@ -7,11 +7,12 @@
 #include "ahe/AHEKnob.h"
 #include "ui/RollChamber.h"
 #include "ui/EffectCard.h"
+#include "ui/PresetBar.h"
 
 // ---------------------------------------------------------------------------
 // DiceVox editor.
 //
-//   header
+//   header            (preset bar: < preset menu > SAVE)
 //   ROLL chamber      (ROLL / BACK, style, intensity, name of the current roll)
 //   effect cards      (two rows, signal order: ON/OFF, lock, knobs)
 //   Bypass  ·  Input / Mix / Output
@@ -44,6 +45,7 @@ private:
 
     private:
         ahe::Header header { "DiceVox" };
+        PresetBar presetBar;
         RollChamber roll;
         std::vector<std::unique_ptr<EffectCard>> cards;
         ahe::Knob inputKnob, mixKnob, outputKnob;

@@ -135,14 +135,34 @@ juce::String DiceVoxProcessor::rollDice()
     return rollDice (diceRandom);
 }
 
-juce::String DiceVoxProcessor::rollDice (juce::Random& rng)
+namespace
+{
+    // Marks a BACK snapshot taken before a preset load: BACK then also restores
+    // Input / Mix / Output, which a preset sets but a roll never touches.
+    const juce::Identifier beforePresetProperty { "beforePreset" };
+
+    void setParameter (juce::RangedAudioParameter& param, float value)
+    {
+        param.beginChangeGesture();
+        param.setValueNotifyingHost (param.convertTo0to1 (value));
+        param.endChangeGesture();
+    }
+}
+
+void DiceVoxProcessor::pushHistory()
 {
     rollHistory.push_back (state.copyState());
     if (rollHistory.size() > maxRollHistory)
         rollHistory.erase (rollHistory.begin());
+}
+
+juce::String DiceVoxProcessor::rollDice (juce::Random& rng)
+{
+    pushHistory();
 
     const auto name = DiceRoller::roll (state, rng);
     state.state.setProperty (rollNameProperty, name, nullptr);
+    state.state.setProperty (presetNameProperty, juce::String(), nullptr); // a new sound, no longer the preset
     return name;
 }
 
@@ -154,33 +174,77 @@ bool DiceVoxProcessor::undoRoll()
     const auto snapshot = rollHistory.back();
     rollHistory.pop_back();
 
-    // Restore every effect parameter. Input, Mix, Output, Bypass and the dice
-    // controls (intensity, style, locks) are left alone: the dice never
-    // changes them, so BACK shouldn't either.
-    const juce::StringArray globals { ParamIDs::inputGain, ParamIDs::outputGain, ParamIDs::mix, ParamIDs::bypass };
+    // Restore every effect parameter. Bypass and the dice controls are left
+    // alone; Input / Mix / Output only come back when BACK undoes a preset load
+    // (the dice never changes them, so BACK after a roll shouldn't either).
+    const bool beforePreset = (bool) snapshot.getProperty (beforePresetProperty, false);
+    const juce::StringArray globals { ParamIDs::inputGain, ParamIDs::outputGain, ParamIDs::mix };
 
     for (auto* param : getParameters())
     {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
-        if (ranged == nullptr || globals.contains (ranged->getParameterID()) || ParamIDs::isDiceControl (ranged->getParameterID()))
+        if (ranged == nullptr || ! PresetStore::isPresetParameter (ranged->getParameterID()))
+            continue;
+        if (! beforePreset && globals.contains (ranged->getParameterID()))
             continue;
 
         const auto saved = snapshot.getChildWithProperty ("id", ranged->getParameterID());
-        if (! saved.isValid())
-            continue;
-
-        ranged->beginChangeGesture();
-        ranged->setValueNotifyingHost (ranged->convertTo0to1 ((float) saved.getProperty ("value")));
-        ranged->endChangeGesture();
+        if (saved.isValid())
+            setParameter (*ranged, (float) saved.getProperty ("value"));
     }
 
     state.state.setProperty (rollNameProperty, snapshot.getProperty (rollNameProperty), nullptr);
+    state.state.setProperty (presetNameProperty, snapshot.getProperty (presetNameProperty), nullptr);
     return true;
 }
 
 juce::String DiceVoxProcessor::getRollName() const
 {
     return state.state.getProperty (rollNameProperty).toString();
+}
+
+// ============================================================================
+// Presets
+// ============================================================================
+juce::File DiceVoxProcessor::savePreset (const juce::String& name)
+{
+    const auto file = presets.save (state, name, getRollName());
+    if (file.existsAsFile())
+        state.state.setProperty (presetNameProperty, PresetStore::nameOf (file), nullptr);
+    return file;
+}
+
+bool DiceVoxProcessor::loadPreset (const juce::File& file)
+{
+    const auto xml = PresetStore::read (file);
+    if (xml == nullptr)
+        return false;
+
+    pushHistory();
+    rollHistory.back().setProperty (beforePresetProperty, true, nullptr);
+
+    // Every sound parameter: the preset's value, or the default if the preset
+    // is older than the parameter.
+    for (auto* param : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+        if (ranged == nullptr || ! PresetStore::isPresetParameter (ranged->getParameterID()))
+            continue;
+
+        const auto* saved = xml->getChildByAttribute ("id", ranged->getParameterID());
+        const float value = saved != nullptr ? (float) saved->getDoubleAttribute ("value")
+                                             : ranged->convertFrom0to1 (ranged->getDefaultValue());
+        setParameter (*ranged, value);
+    }
+
+    state.state.setProperty (rollNameProperty, xml->getStringAttribute ("rollName"), nullptr);
+    state.state.setProperty (presetNameProperty, PresetStore::nameOf (file), nullptr);
+    return true;
+}
+
+juce::String DiceVoxProcessor::getPresetName() const
+{
+    return state.state.getProperty (presetNameProperty).toString();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

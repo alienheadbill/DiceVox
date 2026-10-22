@@ -58,7 +58,8 @@ void DiceVoxEditor::resized()
 // Content (the 860x690 design canvas)
 // ============================================================================
 DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
-    : roll (p),
+    : presetBar (p),
+      roll (p),
       inputKnob  (p.state, ParamIDs::inputGain,  "Input",
                   "Input: level going into DiceVox (-24 to +24 dB). Double-click to reset to 0 dB."),
       mixKnob    (p.state, ParamIDs::mix,        "Mix",
@@ -67,6 +68,7 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
                   "Output: final level leaving DiceVox (-24 to +24 dB). Double-click to reset to 0 dB.")
 {
     addAndMakeVisible (header);
+    addAndMakeVisible (presetBar);
     addAndMakeVisible (roll);
 
     // One card per effect, in signal order.
@@ -141,6 +143,11 @@ void DiceVoxEditor::Content::resized()
     auto area = getLocalBounds();
 
     header.setBounds (area.removeFromTop (56));
+    {
+        // Preset bar in the header's free centre (between the name and the maker mark).
+        const auto centre = header.getCentreArea().translated (header.getX(), header.getY());
+        presetBar.setBounds (centre.withSizeKeepingCentre (juce::jmin (400, centre.getWidth()), 30));
+    }
 
     area.reduce (space::l, 0);
     area.removeFromTop (space::m);

@@ -17,6 +17,7 @@
 #include "ahe/AHEBrandMarks.h"
 #include "ahe/AHEFonts.h"
 #include "ui/RollChamber.h"
+#include "ui/PresetBar.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -1351,6 +1352,116 @@ int main()
             detail += DiceRoller::styleNames()[s.style].toStdString() + ": " + std::to_string (misses) + " misses  ";
         }
         check (ok, "Each dice style always includes its signature effect", detail);
+    }
+
+    // ---------------------------------------------------------------------
+    // Presets
+    // ---------------------------------------------------------------------
+    auto tempPresetFolder = []
+    {
+        return juce::File::getSpecialLocation (juce::File::tempDirectory)
+                   .getChildFile ("DiceVoxPresetTest-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+    };
+    {
+        // Save the whole sound, change everything, load it back exactly. A preset
+        // never touches Bypass or the dice controls, and BACK undoes a load.
+        const auto folder = tempPresetFolder();
+        DiceVoxProcessor p;
+        p.presets.setFolder (folder);
+        juce::Random rng (21);
+        p.rollDice (rng);
+        setParam (p, ParamIDs::outputGain, -4.0f);
+        setParam (p, ParamIDs::diceIntensity, 90.0f);
+        const auto rolled = p.getRollName();
+        std::vector<float> savedValues;
+        for (auto* param : p.getParameters())
+            savedValues.push_back (param->getValue());
+
+        const auto file = p.savePreset ("My: Dreamy/Hook?"); // characters Windows can't use in names
+        bool ok = file.existsAsFile() && file.getParentDirectory() == folder && file.hasFileExtension ("dicevox")
+               && p.getPresetName() == file.getFileNameWithoutExtension();
+
+        juce::Random other (22);
+        p.rollDice (other);
+        setParam (p, ParamIDs::outputGain, 6.0f);
+        setParam (p, ParamIDs::bypass, 1.0f);
+        ok &= p.loadPreset (file);
+
+        std::string mismatch;
+        for (int i = 0; i < p.getParameters().size(); ++i)
+        {
+            auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p.getParameters()[i]);
+            const auto id = ranged->getParameterID();
+            if (id == ParamIDs::bypass || ParamIDs::isDiceControl (id))
+                continue;
+            if (std::abs (ranged->getValue() - savedValues[(size_t) i]) > 1.0e-4f)
+                mismatch += id.toStdString() + " ";
+        }
+        ok &= mismatch.empty() && p.getRollName() == rolled
+           && valueOf (p, ParamIDs::bypass) > 0.5f
+           && std::abs (valueOf (p, ParamIDs::diceIntensity) - 90.0f) < 0.5f;
+
+        ok &= p.undoRoll() && std::abs (valueOf (p, ParamIDs::outputGain) - 6.0f) < 0.05f && p.getPresetName().isEmpty();
+        check (ok, "Presets save the whole sound and load it back exactly; BACK undoes a load",
+               "file " + file.getFileName().toStdString() + ", mismatched: " + mismatch);
+        folder.deleteRecursively();
+    }
+    {
+        // The preset list is sorted and only shows presets; a broken file is
+        // refused; an older preset loads with defaults for what it doesn't have.
+        const auto folder = tempPresetFolder();
+        folder.createDirectory();
+        const juce::String oldPreset = R"(<DiceVoxPreset formatVersion="1" rollName="OLD ONE">)"
+                                       R"(<PARAM id="reverb_on" value="1"/><PARAM id="reverb_mix" value="44"/></DiceVoxPreset>)";
+        folder.getChildFile ("b old.dicevox").replaceWithText (oldPreset);
+        folder.getChildFile ("A first.dicevox").replaceWithText (oldPreset);
+        folder.getChildFile ("notes.txt").replaceWithText ("not a preset");
+        folder.getChildFile ("broken.dicevox").replaceWithText ("this is not xml");
+
+        DiceVoxProcessor p;
+        p.presets.setFolder (folder);
+        setParam (p, "delay_on", 1.0f);
+        setParam (p, DelayModule::mixId, 77.0f);
+        setParam (p, ParamIDs::mix, 50.0f);
+
+        const auto files = p.presets.list();
+        bool ok = files.size() == 3 && files[0].getFileName() == "A first.dicevox" && files[1].getFileName() == "b old.dicevox";
+        ok &= ! p.loadPreset (folder.getChildFile ("broken.dicevox")) && ! p.canUndoRoll();
+        ok &= p.loadPreset (files[1]);
+        ok &= valueOf (p, "reverb_on") > 0.5f && std::abs (valueOf (p, ReverbModule::mixId) - 44.0f) < 0.05f
+           && valueOf (p, "delay_on") < 0.5f && std::abs (valueOf (p, DelayModule::mixId) - 30.0f) < 0.05f
+           && std::abs (valueOf (p, ParamIDs::mix) - 100.0f) < 0.05f
+           && p.getPresetName() == "b old" && p.getRollName() == "OLD ONE";
+        check (ok, "Preset list is sorted and filtered; broken files are refused; older presets fill in defaults",
+               std::to_string (files.size()) + " presets listed");
+        folder.deleteRecursively();
+    }
+    {
+        // The preset bar's < > step through the presets and wrap around.
+        const auto folder = tempPresetFolder();
+        DiceVoxProcessor p;
+        p.presets.setFolder (folder);
+        setParam (p, "reverb_on", 1.0f);
+        p.savePreset ("One");
+        setParam (p, "delay_on", 1.0f);
+        p.savePreset ("Two");
+
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+        std::function<void (juce::Component&, std::function<void (juce::Component&)>)> visit =
+            [&] (juce::Component& c, std::function<void (juce::Component&)> fn) { fn (c); for (auto* ch : c.getChildren()) visit (*ch, fn); };
+        PresetBar* bar = nullptr;
+        visit (*editor, [&] (juce::Component& c) { if (auto* b = dynamic_cast<PresetBar*> (&c)) bar = b; });
+
+        std::string seen;
+        if (bar != nullptr)
+            for (int i = 0; i < 3; ++i)
+            {
+                bar->step (1);
+                seen += p.getPresetName().toStdString() + " ";
+            }
+        check (bar != nullptr && seen == "One Two One " && valueOf (p, "delay_on") < 0.5f,
+               "Preset bar steps through presets (and loads them)", seen);
+        folder.deleteRecursively();
     }
 
     {

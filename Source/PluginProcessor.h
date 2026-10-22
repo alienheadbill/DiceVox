@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include "modules/FxChain.h"
+#include "presets/PresetStore.h"
 
 // Signal flow:
 //   input gain -> [dry tap] -> FxChain (enabled modules) -> dry/wet mix -> output gain
@@ -44,14 +45,28 @@ public:
     juce::String rollDice();
     juce::String rollDice (juce::Random& rng); // tests use a fixed seed
 
-    // BACK: return the effects to how they were before the last roll.
+    // BACK: return the effects to how they were before the last roll or preset load.
     bool undoRoll();
     bool canUndoRoll() const noexcept { return ! rollHistory.empty(); }
 
     // Name of the current roll ("" before the first roll). Saved with the project.
     juce::String getRollName() const;
 
-    static constexpr auto rollNameProperty = "rollName";
+    // ---- Presets (message thread only) --------------------------------------
+    // SAVE: writes the current sound as a preset; returns its file (or a
+    // non-existent file if writing failed).
+    juce::File savePreset (const juce::String& name);
+
+    // Loads a preset's sound (BACK can undo it). False if it isn't a preset.
+    bool loadPreset (const juce::File& file);
+
+    // Name of the loaded / saved preset; cleared by a roll. Saved with the project.
+    juce::String getPresetName() const;
+
+    PresetStore presets;
+
+    static constexpr auto rollNameProperty   = "rollName";
+    static constexpr auto presetNameProperty = "presetName";
     static constexpr size_t maxRollHistory = 32;
 
     // Declared before `state` on purpose: the parameter layout is built from it.
@@ -59,7 +74,9 @@ public:
     juce::AudioProcessorValueTreeState state;
 
 private:
-    std::vector<juce::ValueTree> rollHistory; // state before each roll, newest last
+    void pushHistory();
+
+    std::vector<juce::ValueTree> rollHistory; // state before each roll / preset load, newest last
     juce::Random diceRandom;
 
     std::atomic<float>* inputGainDb  = nullptr;
