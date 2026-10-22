@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Params.h"
+#include "dice/DiceRoller.h"
 
 DiceVoxProcessor::DiceVoxProcessor()
     : AudioProcessor (BusesProperties()
@@ -73,6 +74,12 @@ void DiceVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     outputGain.setGainDecibels (outputGainDb->load());
     dryWet.setWetMixProportion (mixPercent->load() / 100.0f);
 
+    // Tempo-synced effects follow the host (they keep 120 BPM if it sends none).
+    if (auto* playHead = getPlayHead())
+        if (const auto position = playHead->getPosition())
+            if (const auto bpm = position->getBpm())
+                chain.setHostTempo (*bpm);
+
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
 
@@ -102,8 +109,68 @@ void DiceVoxProcessor::getStateInformation (juce::MemoryBlock& destData)
 void DiceVoxProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
         if (xml->hasTagName (state.state.getType()))
+        {
             state.replaceState (juce::ValueTree::fromXml (*xml));
+            rollHistory.clear(); // BACK never jumps to a different project's sound
+        }
+    }
+}
+
+// ============================================================================
+// Dice
+// ============================================================================
+juce::String DiceVoxProcessor::rollDice()
+{
+    return rollDice (diceRandom);
+}
+
+juce::String DiceVoxProcessor::rollDice (juce::Random& rng)
+{
+    rollHistory.push_back (state.copyState());
+    if (rollHistory.size() > maxRollHistory)
+        rollHistory.erase (rollHistory.begin());
+
+    const auto name = DiceRoller::roll (state, rng);
+    state.state.setProperty (rollNameProperty, name, nullptr);
+    return name;
+}
+
+bool DiceVoxProcessor::undoRoll()
+{
+    if (rollHistory.empty())
+        return false;
+
+    const auto snapshot = rollHistory.back();
+    rollHistory.pop_back();
+
+    // Restore every effect parameter. Input, Mix, Output and Bypass are left
+    // alone: the dice never changes them, so BACK shouldn't either.
+    const juce::StringArray globals { ParamIDs::inputGain, ParamIDs::outputGain, ParamIDs::mix, ParamIDs::bypass };
+
+    for (auto* param : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+        if (ranged == nullptr || globals.contains (ranged->getParameterID()))
+            continue;
+
+        const auto saved = snapshot.getChildWithProperty ("id", ranged->getParameterID());
+        if (! saved.isValid())
+            continue;
+
+        ranged->beginChangeGesture();
+        ranged->setValueNotifyingHost (ranged->convertTo0to1 ((float) saved.getProperty ("value")));
+        ranged->endChangeGesture();
+    }
+
+    state.state.setProperty (rollNameProperty, snapshot.getProperty (rollNameProperty), nullptr);
+    return true;
+}
+
+juce::String DiceVoxProcessor::getRollName() const
+{
+    return state.state.getProperty (rollNameProperty).toString();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

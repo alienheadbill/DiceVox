@@ -6,17 +6,19 @@
 #include "ahe/AHEHeader.h"
 #include "ahe/AHEKnob.h"
 #include "ui/RollChamber.h"
+#include "ui/EffectCard.h"
 
 // ---------------------------------------------------------------------------
-// DiceVox editor — UI milestone 01 (AHE Audio visual shell).
+// DiceVox editor.
 //
-// Interactive now:  Input / Mix / Output knobs, Bypass switch (same APVTS
-//                   attachments and parameter IDs as Phase 1), QUICK tab.
-// Shown, disabled:  ROLL chamber (Phase 3), ADVANCED tab (Phase 5).
+//   header
+//   ROLL chamber      (ROLL / BACK, name of the current roll)
+//   effect cards      (Filter, Drive, Chorus, Delay, Reverb: ON/OFF + knobs)
+//   Bypass  ·  Input / Mix / Output
 //
-// Everything is laid out on a 520x360 design canvas ("content") that is scaled
-// as a whole when the window is resized (100%-150%, fixed aspect ratio), so the
-// layout never reflows and vector drawing stays crisp at every size.
+// Everything is laid out on an 800x530 design canvas ("content") that is
+// scaled as a whole when the window is resized (100%-150%, fixed aspect
+// ratio), so the layout never reflows and vector drawing stays crisp.
 // ---------------------------------------------------------------------------
 class DiceVoxEditor : public juce::AudioProcessorEditor
 {
@@ -27,8 +29,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    static constexpr int designWidth  = 520;
-    static constexpr int designHeight = 360;
+    static constexpr int designWidth  = 800;
+    static constexpr int designHeight = 530;
     static constexpr double maxScale  = 1.5;
 
 private:
@@ -41,12 +43,12 @@ private:
 
     private:
         ahe::Header header { "DiceVox" };
-        juce::TextButton quickTab { "QUICK" }, advancedTab { "ADVANCED" };
         RollChamber roll;
+        std::vector<std::unique_ptr<EffectCard>> cards;
         ahe::Knob inputKnob, mixKnob, outputKnob;
         juce::ToggleButton bypassSwitch;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
-        juce::Rectangle<int> footerArea;
+        juce::Rectangle<int> bottomArea;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Content)
     };

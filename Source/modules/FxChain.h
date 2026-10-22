@@ -14,7 +14,7 @@
 // memory is cleared before it fades back in.
 //
 // Modules, in signal order (registered in FxChain.cpp):
-//   Phase 2A: filter
+//   filter -> drive -> chorus -> delay -> reverb
 // ---------------------------------------------------------------------------
 class FxChain
 {
@@ -26,6 +26,7 @@ public:
 
     void prepare (const juce::dsp::ProcessSpec& spec);
     void reset();
+    void setHostTempo (double bpm);
     void process (juce::dsp::AudioBlock<float>& block);
 
     int getLatencySamples() const;
@@ -37,6 +38,7 @@ public:
     static constexpr double switchFadeSeconds = 0.01;
 
 private:
+    void processChunk (juce::dsp::AudioBlock<float>& block);
     void processCrossfading (size_t index, juce::dsp::AudioBlock<float>& block);
 
     std::vector<std::unique_ptr<EffectModule>> modules;

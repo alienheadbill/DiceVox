@@ -1,10 +1,20 @@
 #include "FxChain.h"
 #include "FilterModule.h"
+#include "DriveModule.h"
+#include "ChorusModule.h"
+#include "DelayModule.h"
+#include "ReverbModule.h"
 
 FxChain::FxChain()
 {
-    // Signal-chain order. Phase 2B/2C add saturation, then delay, after the filter.
+    // Signal-chain order: shape the tone, add grit, widen, then echo and space.
+    // Parameters are appended in this order too, so never reorder or remove a
+    // module after release (saved projects and host automation rely on it).
     modules.push_back (std::make_unique<FilterModule>());
+    modules.push_back (std::make_unique<DriveModule>());
+    modules.push_back (std::make_unique<ChorusModule>());
+    modules.push_back (std::make_unique<DelayModule>());
+    modules.push_back (std::make_unique<ReverbModule>());
 
     fades.resize (modules.size());
 }
@@ -55,7 +65,26 @@ void FxChain::reset()
         m->reset();
 }
 
+void FxChain::setHostTempo (double bpm)
+{
+    for (auto& m : modules)
+        m->setHostTempo (bpm);
+}
+
 void FxChain::process (juce::dsp::AudioBlock<float>& block)
+{
+    // Hosts may occasionally send more than the prepared block size. Modules
+    // only ever see blocks up to that size (some JUCE effects need this).
+    const auto chunkSize = (size_t) juce::jmax (1, scratch.getNumSamples());
+
+    for (size_t start = 0; start < block.getNumSamples(); start += chunkSize)
+    {
+        auto chunk = block.getSubBlock (start, juce::jmin (chunkSize, block.getNumSamples() - start));
+        processChunk (chunk);
+    }
+}
+
+void FxChain::processChunk (juce::dsp::AudioBlock<float>& block)
 {
     juce::dsp::ProcessContextReplacing<float> context (block);
 

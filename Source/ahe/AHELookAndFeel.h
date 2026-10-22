@@ -17,6 +17,9 @@ namespace ahe
     //   role::bypass  ToggleButton drawn as a status switch. Uses properties
     //                 "ahe.onText" / "ahe.offText" for the label in each state and
     //                 "ahe.onMeansActive" (bool) to say whether ON = processing.
+    //   role::primary TextButton drawn as the big purple main action (ROLL).
+    // A Slider with the "ahe.compact" property gets a smaller value read-out
+    // (for small knobs, e.g. inside effect cards).
     // -----------------------------------------------------------------------
     class LookAndFeel : public juce::LookAndFeel_V4
     {

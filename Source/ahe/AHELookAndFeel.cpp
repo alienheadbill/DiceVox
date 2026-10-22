@@ -148,7 +148,8 @@ namespace ahe
     juce::Label* LookAndFeel::createSliderTextBox (juce::Slider& slider)
     {
         auto* l = LookAndFeel_V4::createSliderTextBox (slider);
-        l->setFont (juce::Font (font::value (13.0f)));
+        const bool compact = (bool) slider.getProperties().getWithDefault ("ahe.compact", false);
+        l->setFont (juce::Font (font::value (compact ? 11.5f : 13.0f)));
         l->setJustificationType (juce::Justification::centred);
         l->setColour (juce::Label::textColourId, colour::textPrimary);
         l->setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
@@ -180,6 +181,15 @@ namespace ahe
                 g.fillRoundedRectangle (area, radius::small);
             }
         }
+        else if (hasRole (b, role::primary))
+        {
+            // Main action: solid brand purple, lighter on hover / press.
+            auto fill = colour::brandPurple;
+            if (enabled && isDown)             fill = fill.brighter (0.25f);
+            else if (enabled && isHighlighted) fill = fill.brighter (0.12f);
+            drawPanel (g, area, radius::card, enabled ? fill : colour::panel,
+                       enabled ? colour::purpleSoft : colour::border);
+        }
         else
         {
             auto fill = colour::raised;
@@ -195,6 +205,9 @@ namespace ahe
 
     juce::Font LookAndFeel::getTextButtonFont (juce::TextButton& b, int)
     {
+        if (hasRole (b, role::primary))
+            return juce::Font (font::display (30.0f));
+
         return hasRole (b, role::tab) ? juce::Font (font::label (11.5f)) : juce::Font (font::value (13.0f));
     }
 
@@ -203,7 +216,7 @@ namespace ahe
         const bool enabled = b.isEnabled();
         auto area = b.getLocalBounds().reduced (6, 0);
 
-        auto textColour = b.getToggleState() ? colour::textPrimary : colour::textSecondary;
+        auto textColour = (b.getToggleState() || hasRole (b, role::primary)) ? colour::textPrimary : colour::textSecondary;
         if (! enabled) textColour = colour::textMuted;
 
         const auto font  = getTextButtonFont (b, b.getHeight());

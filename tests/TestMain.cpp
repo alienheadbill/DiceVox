@@ -5,6 +5,10 @@
 #include "PluginProcessor.h"
 #include "Params.h"
 #include "modules/FilterModule.h"
+#include "modules/DriveModule.h"
+#include "modules/ChorusModule.h"
+#include "modules/DelayModule.h"
+#include "modules/ReverbModule.h"
 #include "ahe/AHEBrandMarks.h"
 #include "ahe/AHEFonts.h"
 #include "ui/RollChamber.h"
@@ -12,6 +16,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <map>
 
 namespace
 {
@@ -307,10 +312,14 @@ int main()
             if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
                 ids.add (ranged->getParameterID());
         // Phase 1 parameters stay first, in their original order. Module
-        // parameters are appended after them (Phase 2A: filter).
+        // parameters are appended after them, in chain order.
         check (ids.joinIntoString (",") == "input_gain,output_gain,mix,bypass,"
-                                           "filter_on,filter_lowcut,filter_highcut,filter_resonance",
-               "Parameter IDs and order: Phase 1 unchanged, filter appended", ids.joinIntoString (",").toStdString());
+                                           "filter_on,filter_lowcut,filter_highcut,filter_resonance,"
+                                           "drive_on,drive_amount,drive_tone,"
+                                           "chorus_on,chorus_rate,chorus_depth,"
+                                           "delay_on,delay_time,delay_feedback,delay_mix,"
+                                           "reverb_on,reverb_size,reverb_mix",
+               "Parameter IDs and order: Phase 1 unchanged, effects appended", ids.joinIntoString (",").toStdString());
     }
     {
         // Default state captured from main (281c9f6) before the UI work. The four
@@ -325,7 +334,11 @@ int main()
         struct Expected { const char* id; double value; };
         const Expected expected[] = { { "bypass", 0.0 }, { "input_gain", 0.0 }, { "mix", 100.0 }, { "output_gain", 0.0 },
                                       { "filter_on", 0.0 }, { "filter_lowcut", 80.0 }, { "filter_highcut", 20000.0 },
-                                      { "filter_resonance", 0.0 } };
+                                      { "filter_resonance", 0.0 },
+                                      { "drive_on", 0.0 }, { "drive_amount", 35.0 }, { "drive_tone", 60.0 },
+                                      { "chorus_on", 0.0 }, { "chorus_rate", 0.8 }, { "chorus_depth", 40.0 },
+                                      { "delay_on", 0.0 }, { "delay_time", 5.0 }, { "delay_feedback", 35.0 }, { "delay_mix", 30.0 },
+                                      { "reverb_on", 0.0 }, { "reverb_size", 50.0 }, { "reverb_mix", 25.0 } };
 
         bool ok = xml != nullptr && xml->getTagName() == "DiceVoxState"
                && xml->getNumChildElements() == (int) std::size (expected)
@@ -408,46 +421,82 @@ int main()
         check (bypassOk, "Bypass switch drives the bypass parameter and follows automation");
     }
     {
-        // ROLL must not be clickable/enabled-looking in Phase 1; ADVANCED tab is disabled.
+        // Every effect parameter has a control on screen, wired both ways.
+        std::function<juce::Component* (juce::Component&, const juce::String&)> findById =
+            [&] (juce::Component& root, const juce::String& id) -> juce::Component*
+        {
+            for (auto* child : root.getChildren())
+            {
+                if (child->getComponentID() == id) return child;
+                if (auto* hit = findById (*child, id)) return hit;
+            }
+            return nullptr;
+        };
+
+        DiceVoxProcessor p;
+        std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+
+        juce::StringArray missing, unwired;
+        for (auto* param : p.getParameters())
+        {
+            auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+            const auto id = ranged->getParameterID();
+            auto* control = findById (*editor, id);
+            if (control == nullptr) { missing.add (id); continue; }
+
+            // Host -> UI: move the parameter to the far end of its range and see the control follow.
+            ranged->setValueNotifyingHost (1.0f);
+            bool follows = false;
+            if (auto* s = dynamic_cast<juce::Slider*> (control))
+                follows = std::abs (s->getValue() - (double) ranged->convertFrom0to1 (1.0f)) < 0.051;
+            else if (auto* b = dynamic_cast<juce::Button*> (control))
+                follows = b->getToggleState();
+            if (! follows) unwired.add (id);
+            ranged->setValueNotifyingHost (ranged->getDefaultValue());
+        }
+        check (missing.isEmpty() && unwired.isEmpty(), "Every parameter has an on-screen control that follows automation",
+               "missing: " + missing.joinIntoString (",").toStdString() + "; not following: " + unwired.joinIntoString (",").toStdString());
+
+        check (editor->getWidth() == 800 && editor->getHeight() == 530, "Editor opens at 800x530",
+               std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight()));
+    }
+    {
+        // ROLL and BACK work from the screen.
         DiceVoxProcessor p;
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
 
         std::function<void (juce::Component&, std::function<void (juce::Component&)>)> visit =
             [&] (juce::Component& c, std::function<void (juce::Component&)> fn) { fn (c); for (auto* ch : c.getChildren()) visit (*ch, fn); };
 
-        bool rollFound = false, rollHasButton = false, advancedDisabled = false;
-        visit (*editor, [&] (juce::Component& c)
-        {
-            if (auto* roll = dynamic_cast<RollChamber*> (&c))
-            {
-                rollFound = true;
-                visit (*roll, [&] (juce::Component& inner) { rollHasButton |= dynamic_cast<juce::Button*> (&inner) != nullptr; });
-            }
-            if (auto* b = dynamic_cast<juce::TextButton*> (&c))
-                if (b->getButtonText() == "ADVANCED")
-                    advancedDisabled = ! b->isEnabled();
-        });
-        check (rollFound && ! rollHasButton, "ROLL chamber is shown but not clickable (randomizer is Phase 3)");
-        check (advancedDisabled, "ADVANCED tab is disabled (Phase 5)");
+        RollChamber* roll = nullptr;
+        visit (*editor, [&] (juce::Component& c) { if (auto* r = dynamic_cast<RollChamber*> (&c)) roll = r; });
 
-        // At the minimum (520x360) size the tabs must keep their full width and
-        // stay clear of the product name and maker mark.
-        juce::Rectangle<int> quickR, advancedR;
-        visit (*editor, [&] (juce::Component& c)
+        bool ok = false;
+        std::string detail = "no ROLL chamber";
+        if (roll != nullptr)
         {
-            if (auto* b = dynamic_cast<juce::TextButton*> (&c))
+            auto countOn = [&]
             {
-                if (b->getButtonText() == "QUICK")    quickR    = b->getBoundsInParent();
-                if (b->getButtonText() == "ADVANCED") advancedR = b->getBoundsInParent();
-            }
-        });
-        check (quickR.getWidth() >= 64 && advancedR.getWidth() >= 140 && ! quickR.intersects (advancedR)
-                   && advancedR.getRight() <= 520 - 16 - 90,
-               "QUICK / ADVANCED tabs are not crowded at minimum size",
-               "QUICK " + quickR.toString().toStdString() + ", ADVANCED " + advancedR.toString().toStdString());
+                int n = 0;
+                for (auto* id : { "filter_on", "drive_on", "chorus_on", "delay_on", "reverb_on" })
+                    n += p.state.getRawParameterValue (id)->load() > 0.5f ? 1 : 0;
+                return n;
+            };
+            const bool backDisabledFirst = ! roll->getBackButton().isEnabled();
+            // Run the buttons' click handlers directly (a real click is delivered
+            // asynchronously, and this test has no running message loop).
+            roll->getRollButton().onClick();
+            const int onAfterRoll = countOn();
+            const bool backEnabled = roll->getBackButton().isEnabled();
+            roll->getBackButton().onClick();
+            const int onAfterBack = countOn();
 
-        check (editor->getWidth() == 520 && editor->getHeight() == 360, "Editor opens at compact 520x360",
-               std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight()));
+            ok = backDisabledFirst && onAfterRoll >= 2 && onAfterRoll <= 4 && backEnabled && onAfterBack == 0
+              && p.getRollName().isEmpty();
+            detail = "effects on after ROLL " + std::to_string (onAfterRoll) + ", after BACK " + std::to_string (onAfterBack)
+                   + ", BACK disabled at start " + std::to_string (backDisabledFirst) + ", enabled after roll " + std::to_string (backEnabled);
+        }
+        check (ok, "ROLL button builds a 2-4 effect chain, BACK restores the previous one", detail);
     }
     {
         // Brand marks load from embedded SVGs, including the compact AHE wordmark
@@ -814,6 +863,267 @@ int main()
                "Per-stage Q is full when cutoffs are far apart and glides down as they meet",
                "far " + std::to_string (qFar) + ", met " + std::to_string (qMet) + ", largest step " + std::to_string (largestJump));
     }
+    // ---------------------------------------------------------------------
+    // Usable v1: drive, chorus, delay, reverb, and the dice
+    // ---------------------------------------------------------------------
+    const char* const allEffects[] = { "filter_on", "drive_on", "chorus_on", "delay_on", "reverb_on" };
+    {
+        // Drive: rounds off peaks and adds harmonics, without getting much louder.
+        DiceVoxProcessor p;
+        setParam (p, "drive_on", 1.0f);
+        setParam (p, DriveModule::amountId, 80.0f);
+        setParam (p, DriveModule::toneId, 100.0f);
+        auto in  = sine (2, (int) sampleRate, 220.0, sampleRate, 0.5f);
+        auto out = processAll (p, in, sampleRate);
+        const int tail = (int) (0.5 * sampleRate);
+        const float levelDb = juce::Decibels::gainToDecibels (out.getRMSLevel (0, tail, tail) / in.getRMSLevel (0, tail, tail));
+        const float crest = out.getMagnitude (0, tail, tail) / out.getRMSLevel (0, tail, tail); // sine = 1.41, squarer = lower
+        check (allFinite (out) && out.getMagnitude (0, out.getNumSamples()) < 1.0f && std::abs (levelDb) < 6.0f && crest < 1.36f,
+               "Drive saturates (flatter peaks) without a big level jump",
+               "level change " + db (levelDb) + ", crest factor " + std::to_string (crest));
+    }
+    {
+        // Drive at 0 % with the tone open is close to transparent for quiet signals.
+        DiceVoxProcessor p;
+        setParam (p, "drive_on", 1.0f);
+        setParam (p, DriveModule::amountId, 0.0f);
+        setParam (p, DriveModule::toneId, 100.0f);
+        auto in  = sine (2, (int) sampleRate, 1000.0, sampleRate, 0.05f);
+        auto out = processAll (p, in, sampleRate);
+        const int tail = (int) (0.5 * sampleRate);
+        const float levelDb = juce::Decibels::gainToDecibels (out.getRMSLevel (0, tail, tail) / in.getRMSLevel (0, tail, tail));
+        check (std::abs (levelDb) < 0.5f, "Drive at 0 % barely changes a quiet vocal", "level change " + db (levelDb));
+    }
+    {
+        // Chorus: a centred (mono) vocal comes out different on the left and right.
+        DiceVoxProcessor p;
+        setParam (p, "chorus_on", 1.0f);
+        setParam (p, ChorusModule::depthId, 60.0f);
+        auto in  = sine (2, (int) sampleRate, 440.0, sampleRate, 0.3f);
+        auto out = processAll (p, in, sampleRate);
+        float sideMax = 0.0f;
+        for (int i = (int) (0.5 * sampleRate); i < out.getNumSamples(); ++i)
+            sideMax = std::max (sideMax, std::abs (out.getSample (0, i) - out.getSample (1, i)));
+        check (allFinite (out) && sideMax > 0.01f && out.getMagnitude (0, out.getNumSamples()) < 0.6f,
+               "Chorus spreads a centred vocal into stereo", "largest left/right difference " + std::to_string (sideMax));
+    }
+    {
+        // Delay time follows the tempo.
+        const bool ok = std::abs (DelayModule::delaySeconds (5, 120.0) - 0.5) < 1.0e-9    // 1/4 at 120 BPM
+                     && std::abs (DelayModule::delaySeconds (3, 100.0) - 0.45) < 1.0e-9   // 1/8 dotted at 100 BPM
+                     && std::abs (DelayModule::delaySeconds (5, 0.0) - 0.5) < 1.0e-9      // no tempo: 120 BPM
+                     && DelayModule::delaySeconds (7, 30.0) <= DelayModule::maxDelaySeconds;
+        check (ok && DelayModule::divisionNames().size() == 8, "Delay times are note divisions of the host tempo");
+    }
+    {
+        // Delay: a single click comes back one quarter note (0.5 s at 120 BPM) later.
+        DiceVoxProcessor p;
+        setParam (p, "delay_on", 1.0f);
+        setParam (p, DelayModule::timeId, 5.0f);
+        setParam (p, DelayModule::feedbackId, 0.0f);
+        setParam (p, DelayModule::mixId, 100.0f);
+        juce::AudioBuffer<float> in (2, (int) sampleRate);
+        in.clear();
+        in.setSample (0, 0, 0.5f);
+        in.setSample (1, 0, 0.5f);
+        auto out = processAll (p, in, sampleRate);
+        int echoAt = -1;
+        float echoPeak = 0.0f;
+        for (int i = 100; i < out.getNumSamples(); ++i)
+            if (std::abs (out.getSample (0, i)) > echoPeak) { echoPeak = std::abs (out.getSample (0, i)); echoAt = i; }
+        check (std::abs (echoAt - 24000) <= 2 && echoPeak > 0.2f, "Delay echo lands on the beat (1/4 at 120 BPM = 0.5 s)",
+               "echo at sample " + std::to_string (echoAt) + " (expected 24000), level " + std::to_string (echoPeak));
+    }
+    {
+        // Delay at maximum feedback with loud noise stays bounded (no runaway).
+        DiceVoxProcessor p;
+        setParam (p, "delay_on", 1.0f);
+        setParam (p, DelayModule::timeId, 0.0f);
+        setParam (p, DelayModule::feedbackId, DelayModule::maxFeedback);
+        setParam (p, DelayModule::mixId, 100.0f);
+        auto out = processAll (p, noise (2, (int) (6.0 * sampleRate), 0.5f, 17), sampleRate);
+        const float peak = out.getMagnitude (0, out.getNumSamples());
+        check (allFinite (out) && peak < 3.0f, "Delay at maximum feedback never runs away", "peak " + std::to_string (peak) + " for input peak 0.5");
+    }
+    {
+        // Reverb: a click leaves a tail; at Mix 0 the vocal is untouched in level.
+        DiceVoxProcessor p;
+        setParam (p, "reverb_on", 1.0f);
+        setParam (p, ReverbModule::sizeId, 80.0f);
+        setParam (p, ReverbModule::mixId, 50.0f);
+        juce::AudioBuffer<float> in (2, (int) (2.0 * sampleRate));
+        in.clear();
+        in.setSample (0, 0, 0.8f);
+        in.setSample (1, 0, 0.8f);
+        auto out = processAll (p, in, sampleRate);
+        const float tailRms = out.getRMSLevel (0, (int) (0.3 * sampleRate), (int) (0.2 * sampleRate));
+
+        DiceVoxProcessor q;
+        setParam (q, "reverb_on", 1.0f);
+        setParam (q, ReverbModule::mixId, 0.0f);
+        const float dryDb = gainDb (q, 1000.0, sampleRate);
+        check (allFinite (out) && tailRms > 1.0e-5f && std::abs (dryDb) < 0.5f, "Reverb adds a tail; Mix 0 leaves the vocal level alone",
+               "tail RMS " + std::to_string (tailRms) + ", Mix 0 level " + db (dryDb));
+    }
+    {
+        // Everything on at once, every setting jumping every block, block sizes
+        // from 1 up to 1500 (prepared for 512): no NaN/Inf, no blow-up. Stereo and mono.
+        for (int channels : { 2, 1 })
+        {
+            DiceVoxProcessor p;
+            juce::AudioProcessor::BusesLayout layout;
+            layout.inputBuses.add (channels == 2 ? juce::AudioChannelSet::stereo() : juce::AudioChannelSet::mono());
+            layout.outputBuses.add (channels == 2 ? juce::AudioChannelSet::stereo() : juce::AudioChannelSet::mono());
+            p.setBusesLayout (layout);
+            juce::Random rng (42 + channels);
+            auto out = processAll (p, noise (channels, (int) (6.0 * sampleRate), 0.3f, 9), sampleRate, blockSize,
+                                   [&] (int) { return 1 + rng.nextInt (1500); },
+                                   [&] (int b)
+                                   {
+                                       for (auto* param : p.getParameters())
+                                       {
+                                           auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+                                           const auto id = ranged->getParameterID();
+                                           if (id == ParamIDs::bypass || id == ParamIDs::inputGain || id == ParamIDs::outputGain)
+                                               continue;
+                                           if (id.endsWith ("_on"))
+                                               ranged->setValueNotifyingHost ((b / 5) % 3 == 0 ? 0.0f : 1.0f);
+                                           else
+                                               ranged->setValueNotifyingHost (rng.nextFloat());
+                                       }
+                                   });
+            const float peak = out.getMagnitude (0, out.getNumSamples());
+            check (allFinite (out) && peak < 4.0f,
+                   "All effects stay stable under extreme automation and odd block sizes (" + std::string (channels == 2 ? "stereo" : "mono") + ")",
+                   "peak " + std::to_string (peak) + " for input peak 0.3");
+        }
+    }
+    {
+        // Same audio whatever the host's block sizes, with every effect on.
+        auto in = noise (2, (int) sampleRate, 0.3f, 13);
+        auto render = [&] (std::function<int (int)> sizes)
+        {
+            DiceVoxProcessor p;
+            for (auto* id : allEffects)
+                setParam (p, id, 1.0f);
+            return processAll (p, in, sampleRate, blockSize, sizes);
+        };
+        juce::Random rng (8);
+        auto fixedBlocks  = render ({});
+        auto randomBlocks = render ([&] (int b) { return b == 0 ? 1500 : 1 + rng.nextInt (700); });
+        float diff = 0.0f;
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < in.getNumSamples(); ++i)
+                diff = std::max (diff, std::abs (fixedBlocks.getSample (ch, i) - randomBlocks.getSample (ch, i)));
+        check (diff < 1.0e-4f, "Full chain output does not depend on host block size", "max diff " + std::to_string (diff));
+    }
+    {
+        DiceVoxProcessor p;
+        for (auto* id : allEffects)
+            setParam (p, id, 1.0f);
+        p.prepareToPlay (sampleRate, blockSize);
+        check (p.getLatencySamples() == 0 && p.getTailLengthSeconds() >= 5.0,
+               "Full chain adds no latency and reports a tail for reverb and echoes",
+               std::to_string (p.getLatencySamples()) + " samples, tail " + std::to_string (p.getTailLengthSeconds()) + " s");
+    }
+    {
+        // Dice: 300 rolls. Each switches on 2-4 effects, keeps every setting in
+        // range, leaves Input / Mix / Output / Bypass alone and gets a name.
+        // Over many rolls every effect comes up.
+        DiceVoxProcessor p;
+        setParam (p, ParamIDs::inputGain, 3.0f);
+        setParam (p, ParamIDs::mix, 70.0f);
+        juce::Random rng (2024);
+        std::map<juce::String, int> timesOn;
+        int badCount = 0, unnamed = 0;
+        bool globalsKept = true, inRange = true;
+        for (int r = 0; r < 300; ++r)
+        {
+            const auto name = p.rollDice (rng);
+            int on = 0;
+            for (auto* id : allEffects)
+                if (p.state.getRawParameterValue (id)->load() > 0.5f) { ++on; ++timesOn[id]; }
+            badCount += (on < 2 || on > 4) ? 1 : 0;
+            unnamed  += name.isEmpty() || name != p.getRollName() ? 1 : 0;
+            globalsKept &= std::abs (p.state.getRawParameterValue (ParamIDs::inputGain)->load() - 3.0f) < 0.05f
+                        && std::abs (p.state.getRawParameterValue (ParamIDs::mix)->load() - 70.0f) < 0.05f
+                        && p.state.getRawParameterValue (ParamIDs::bypass)->load() < 0.5f;
+            for (auto* param : p.getParameters())
+                inRange &= param->getValue() >= 0.0f && param->getValue() <= 1.0f;
+        }
+        bool everyEffect = true;
+        std::string counts;
+        for (auto* id : allEffects)
+        {
+            everyEffect &= timesOn[id] > 20;
+            counts += std::string (id) + "=" + std::to_string (timesOn[id]) + " ";
+        }
+        check (badCount == 0 && unnamed == 0 && globalsKept && inRange && everyEffect,
+               "ROLL: 2-4 effects every time, named, in range, never touches Input/Mix/Output/Bypass",
+               "wrong count " + std::to_string (badCount) + ", unnamed " + std::to_string (unnamed) + ", " + counts);
+    }
+    {
+        // Same seed, same roll (the dice are reproducible for testing).
+        DiceVoxProcessor a, b;
+        juce::Random ra (77), rb (77);
+        const auto nameA = a.rollDice (ra), nameB = b.rollDice (rb);
+        bool same = nameA == nameB;
+        for (int i = 0; i < a.getParameters().size(); ++i)
+            same &= std::abs (a.getParameters()[i]->getValue() - b.getParameters()[i]->getValue()) < 1.0e-6f;
+        check (same, "Same dice seed gives the same roll", (nameA + " / " + nameB).toStdString());
+    }
+    {
+        // Rolled chains sound sane: 60 random rolls on noise, all finite and bounded.
+        float worst = 0.0f;
+        bool finite = true;
+        for (int seed = 1; seed <= 60; ++seed)
+        {
+            DiceVoxProcessor p;
+            juce::Random rng (seed);
+            p.rollDice (rng);
+            auto out = processAll (p, noise (2, (int) (1.5 * sampleRate), 0.3f, seed), sampleRate);
+            finite &= allFinite (out);
+            worst = std::max (worst, out.getMagnitude (0, out.getNumSamples()));
+        }
+        check (finite && worst < 2.0f, "60 random rolls all play back cleanly (finite, bounded)",
+               "loudest peak " + std::to_string (worst) + " for input peak 0.3");
+    }
+    {
+        // BACK: roll A, roll B, BACK -> exactly A again (settings and name).
+        DiceVoxProcessor p;
+        juce::Random rng (5);
+        const auto nameA = p.rollDice (rng);
+        std::vector<float> afterA;
+        for (auto* param : p.getParameters())
+            afterA.push_back (param->getValue());
+        p.rollDice (rng);
+        const bool undone = p.undoRoll();
+        bool same = undone && p.getRollName() == nameA;
+        for (int i = 0; i < p.getParameters().size(); ++i)
+            same &= std::abs (p.getParameters()[i]->getValue() - afterA[(size_t) i]) < 1.0e-6f;
+
+        // Back past the first roll: everything off again; then nothing left to undo.
+        same &= p.undoRoll() && ! p.canUndoRoll() && ! p.undoRoll();
+        for (auto* id : allEffects)
+            same &= p.state.getRawParameterValue (id)->load() < 0.5f;
+        check (same, "BACK restores the previous roll exactly, then the starting sound", nameA.toStdString());
+    }
+    {
+        // The roll's name is saved with the project.
+        juce::MemoryBlock saved;
+        juce::String name;
+        {
+            DiceVoxProcessor p;
+            juce::Random rng (11);
+            name = p.rollDice (rng);
+            p.getStateInformation (saved);
+        }
+        DiceVoxProcessor restored;
+        restored.setStateInformation (saved.getData(), (int) saved.getSize());
+        check (restored.getRollName() == name && ! restored.canUndoRoll(), "Roll name survives save/reload",
+               (name + " -> " + restored.getRollName()).toStdString());
+    }
+
     {
         // CPU cost (informational, not a pass/fail): 10 s of stereo audio at 48 kHz
         // with the filter on, settled and while every cutoff is gliding.

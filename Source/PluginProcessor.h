@@ -26,7 +26,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return 10.0; } // reverb + delay repeats
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -39,11 +39,29 @@ public:
 
     juce::AudioProcessorParameter* getBypassParameter() const override;
 
+    // ---- Dice (message thread only) ----------------------------------------
+    // ROLL: a new random effect chain (see dice/DiceRoller.h). Returns its name.
+    juce::String rollDice();
+    juce::String rollDice (juce::Random& rng); // tests use a fixed seed
+
+    // BACK: return the effects to how they were before the last roll.
+    bool undoRoll();
+    bool canUndoRoll() const noexcept { return ! rollHistory.empty(); }
+
+    // Name of the current roll ("" before the first roll). Saved with the project.
+    juce::String getRollName() const;
+
+    static constexpr auto rollNameProperty = "rollName";
+    static constexpr size_t maxRollHistory = 32;
+
     // Declared before `state` on purpose: the parameter layout is built from it.
     FxChain chain;
     juce::AudioProcessorValueTreeState state;
 
 private:
+    std::vector<juce::ValueTree> rollHistory; // state before each roll, newest last
+    juce::Random diceRandom;
+
     std::atomic<float>* inputGainDb  = nullptr;
     std::atomic<float>* outputGainDb = nullptr;
     std::atomic<float>* mixPercent   = nullptr;

@@ -42,6 +42,11 @@ target_sources(DiceVox PRIVATE
     Source/Params.cpp
     Source/modules/FxChain.cpp
     Source/modules/FilterModule.cpp
+    Source/modules/DriveModule.cpp
+    Source/modules/ChorusModule.cpp
+    Source/modules/DelayModule.cpp
+    Source/modules/ReverbModule.cpp
+    Source/dice/DiceRoller.cpp
     # Shared AHE Audio UI layer (candidate for the future ahe-core repo)
     Source/ahe/AHEFonts.cpp
     Source/ahe/AHELookAndFeel.cpp
@@ -49,7 +54,8 @@ target_sources(DiceVox PRIVATE
     Source/ahe/AHEHeader.cpp
     Source/ahe/AHEKnob.cpp
     # DiceVox-specific UI
-    Source/ui/RollChamber.cpp)
+    Source/ui/RollChamber.cpp
+    Source/ui/EffectCard.cpp)
 
 # Approved AHE Audio brand vectors (design/assets) and OFL fonts (design/fonts),
 # compiled into the plug-in. No files are read from disk or the network at runtime.

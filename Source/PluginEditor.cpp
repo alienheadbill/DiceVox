@@ -1,5 +1,10 @@
 #include "PluginEditor.h"
 #include "Params.h"
+#include "modules/FilterModule.h"
+#include "modules/DriveModule.h"
+#include "modules/ChorusModule.h"
+#include "modules/DelayModule.h"
+#include "modules/ReverbModule.h"
 
 using namespace ahe::theme;
 
@@ -16,10 +21,8 @@ DiceVoxEditor::DiceVoxEditor (DiceVoxProcessor& p)
     setLookAndFeel (&lookAndFeel);
     tooltips.setLookAndFeel (&lookAndFeel);
 
-    // Compact 520x360 by default; optional resize up to 150% with a fixed aspect
-    // ratio. PROVISIONAL until verified as a VST3 in FL Studio on Windows.
-    // The size is not saved with the project (that would change the plug-in
-    // state format, which is out of scope for this milestone).
+    // 800x530 by default; optional resize up to 150% with a fixed aspect ratio.
+    // The size is not saved with the project.
     setResizable (true, true);
     setResizeLimits (designWidth, designHeight,
                      juce::roundToInt (designWidth * maxScale), juce::roundToInt (designHeight * maxScale));
@@ -48,10 +51,11 @@ void DiceVoxEditor::resized()
 }
 
 // ============================================================================
-// Content (the 520x360 design canvas)
+// Content (the 800x530 design canvas)
 // ============================================================================
 DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
-    : inputKnob  (p.state, ParamIDs::inputGain,  "Input",
+    : roll (p),
+      inputKnob  (p.state, ParamIDs::inputGain,  "Input",
                   "Input: level going into DiceVox (-24 to +24 dB). Double-click to reset to 0 dB."),
       mixKnob    (p.state, ParamIDs::mix,        "Mix",
                   "Mix: blend between your original vocal (0%) and the processed sound (100%). Double-click to reset."),
@@ -59,26 +63,37 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
                   "Output: final level leaving DiceVox (-24 to +24 dB). Double-click to reset to 0 dB.")
 {
     addAndMakeVisible (header);
-
-    // Navigation: QUICK is the only view that exists today.
-    for (auto* tab : { &quickTab, &advancedTab })
-    {
-        tab->getProperties().set (roleProperty, role::tab);
-        tab->setClickingTogglesState (false);
-        tab->setWantsKeyboardFocus (true);
-        addAndMakeVisible (*tab);
-    }
-    quickTab.setToggleState (true, juce::dontSendNotification);
-    quickTab.setTooltip ("Quick view: the main controls.");
-    quickTab.setTitle ("Quick view (selected)");
-
-    // Development-only badge: the shipping UI must not show phase labels.
-    advancedTab.getProperties().set ("ahe.badge", "PHASE 5");
-    advancedTab.setEnabled (false);
-    advancedTab.setTooltip ("Advanced view (every effect setting) arrives in Phase 5.");
-    advancedTab.setTitle ("Advanced view (not available until Phase 5)");
-
     addAndMakeVisible (roll);
+
+    // One card per effect, in signal order.
+    auto addCard = [this, &p] (const juce::String& moduleId, const juce::String& title,
+                               const juce::String& description, std::vector<EffectCard::KnobSpec> knobs)
+    {
+        cards.push_back (std::make_unique<EffectCard> (p.state, moduleId, title, description, knobs));
+        addAndMakeVisible (*cards.back());
+    };
+
+    addCard ("filter", "Filter", "cuts lows and highs, from rumble clean-up to telephone and radio sounds.", {
+        { FilterModule::lowCutId,    "Low Cut",   "Low Cut: removes everything below this frequency (thinner, smaller voice as you raise it)." },
+        { FilterModule::highCutId,   "High Cut",  "High Cut: removes everything above this frequency (darker, muffled voice as you lower it)." },
+        { FilterModule::resonanceId, "Resonance", "Resonance: a boost right at the cutoffs, for a nasal, honky edge." } });
+
+    addCard ("drive", "Drive", "saturation for warmth and grit.", {
+        { DriveModule::amountId, "Amount", "Amount: how hard the vocal is driven (warm at low settings, gritty at high)." },
+        { DriveModule::toneId,   "Tone",   "Tone: lower it to soften the fizz the drive adds." } });
+
+    addCard ("chorus", "Chorus", "doubles the vocal and spreads it wide.", {
+        { ChorusModule::rateId,  "Rate",  "Rate: how fast the doubled voices drift." },
+        { ChorusModule::depthId, "Depth", "Depth: how far the doubled voices drift apart (wider and more wobbly)." } });
+
+    addCard ("delay", "Delay", "tempo-synced echoes that bounce left and right.", {
+        { DelayModule::timeId,     "Time",     "Time: echo length in notes, synced to your project tempo (D = dotted, T = triplet)." },
+        { DelayModule::feedbackId, "Feedback", "Feedback: how many times the echo repeats." },
+        { DelayModule::mixId,      "Mix",      "Mix: how loud the echoes are. Your vocal itself stays at full level." } });
+
+    addCard ("reverb", "Reverb", "room, space or hall around the vocal.", {
+        { ReverbModule::sizeId, "Size", "Size: from a small room to a long hall." },
+        { ReverbModule::mixId,  "Mix",  "Mix: how much reverb is added. Your vocal itself stays upfront." } });
 
     for (auto* knob : { &inputKnob, &mixKnob, &outputKnob })
         addAndMakeVisible (*knob);
@@ -104,46 +119,51 @@ void DiceVoxEditor::Content::resized()
 {
     auto area = getLocalBounds();
 
-    // Header (56) with tabs in its free centre area
     header.setBounds (area.removeFromTop (56));
-    {
-        auto tabs = header.getCentreArea().withSizeKeepingCentre (header.getCentreArea().getWidth(), 30)
-                                          .translated (0, header.getY());
-        quickTab.setBounds (tabs.removeFromLeft (64));
-        tabs.removeFromLeft (space::xs);
-        advancedTab.setBounds (tabs.removeFromLeft (juce::jmin (148, tabs.getWidth())));
-    }
 
     area.reduce (space::l, 0);
-    area.removeFromTop (space::m + 2);
+    area.removeFromTop (space::m);
+    area.removeFromBottom (space::s);
 
-    // Footer: bypass switch on the left, build info on the right
-    footerArea = area.removeFromBottom (44);
-    bypassSwitch.setBounds (footerArea.withTrimmedTop (space::s).withTrimmedBottom (space::s)
-                                      .removeFromLeft (140));
+    // Bottom row: bypass on the left, Input / Mix / Output in the middle
+    bottomArea = area.removeFromBottom (100);
+    {
+        auto row = bottomArea.withTrimmedTop (space::s);
+        bypassSwitch.setBounds (row.removeFromLeft (140).withSizeKeepingCentre (140, 28));
+
+        constexpr int knobW = 100;
+        auto knobRow = row.withSizeKeepingCentre (3 * knobW, row.getHeight());
+        for (auto* knob : { &inputKnob, &mixKnob, &outputKnob })
+            knob->setBounds (knobRow.removeFromLeft (knobW));
+    }
 
     // ROLL chamber
-    roll.setBounds (area.removeFromTop (100));
+    roll.setBounds (area.removeFromTop (88));
     area.removeFromTop (space::m);
-    area.removeFromBottom (space::s);   // breathing room above the footer line
+    area.removeFromBottom (space::m);
 
-    // Knob row: three equal columns
-    const int columnW = area.getWidth() / 3;
-    for (auto* knob : { &inputKnob, &mixKnob, &outputKnob })
-        knob->setBounds (area.removeFromLeft (columnW).withSizeKeepingCentre (110, area.getHeight()));
+    // Effect cards: equal columns
+    const int gap = space::s;
+    const int numCards = (int) cards.size();
+    const int cardW = (area.getWidth() - gap * (numCards - 1)) / juce::jmax (1, numCards);
+    for (auto& card : cards)
+    {
+        card->setBounds (area.removeFromLeft (cardW));
+        area.removeFromLeft (gap);
+    }
 }
 
 void DiceVoxEditor::Content::paint (juce::Graphics& g)
 {
     g.fillAll (colour::canvas);
 
-    // Footer divider + build/phase info (honest about what this build does)
+    // Divider above the bottom row + build info
     g.setColour (colour::border);
-    g.fillRect (footerArea.getX(), footerArea.getY(), footerArea.getWidth(), 1);
+    g.fillRect (bottomArea.getX(), bottomArea.getY(), bottomArea.getWidth(), 1);
 
     g.setColour (colour::textMuted);
     g.setFont (juce::Font (font::body (11.0f)));
     const auto dot = juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  "));
-    g.drawText ("v" JucePlugin_VersionString + dot + "Phase 1 preview" + dot + "no effects yet",
-                footerArea.withTrimmedRight (space::l), juce::Justification::centredRight, false);
+    g.drawText ("v" JucePlugin_VersionString + dot + "test build",
+                bottomArea.withTrimmedTop (space::s), juce::Justification::centredRight, false);
 }
