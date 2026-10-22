@@ -1157,8 +1157,11 @@ int main()
     // ---------------------------------------------------------------------
     auto valueOf = [] (DiceVoxProcessor& p, const juce::String& id) { return p.state.getRawParameterValue (id)->load(); };
     {
-        // Pitch: the loudest frequency moves by the set number of semitones.
-        auto dominantHz = [] (const juce::AudioBuffer<float>& b, int start)
+        // Pitch: the sound's centre frequency moves by the set number of semitones.
+        // The grain crossfades add small side-tones a grain rate (10-20 Hz) either
+        // side of the note, so the single loudest bin can be a side-tone; the
+        // energy-weighted centre of the band around the note is the fair measure.
+        auto centreHz = [] (const juce::AudioBuffer<float>& b, int start, float expected)
         {
             constexpr int order = 15, size = 1 << order;
             std::vector<float> data (2 * size, 0.0f);
@@ -1166,8 +1169,15 @@ int main()
             juce::dsp::WindowingFunction<float> (size, juce::dsp::WindowingFunction<float>::hann)
                 .multiplyWithWindowingTable (data.data(), size);
             juce::dsp::FFT (order).performFrequencyOnlyForwardTransform (data.data());
-            const auto peak = std::max_element (data.begin() + 1, data.begin() + size / 2);
-            return (float) ((double) std::distance (data.begin(), peak) * sampleRate / size);
+            const double binHz = sampleRate / size;
+            double weighted = 0.0, total = 0.0;
+            for (int k = (int) (0.8 * expected / binHz); k <= (int) (1.2 * expected / binHz); ++k)
+            {
+                const double power = juce::square ((double) data[(size_t) k]);
+                weighted += power * k * binHz;
+                total += power;
+            }
+            return total > 0.0 ? (float) (weighted / total) : 0.0f;
         };
         bool ok = true;
         std::string detail;
@@ -1178,9 +1188,9 @@ int main()
             setParam (p, PitchModule::shiftId, shift);
             setParam (p, PitchModule::mixId, 100.0f);
             auto out = processAll (p, sine (2, (int) (2.0 * sampleRate), 300.0, sampleRate, 0.4f), sampleRate);
-            const float hz = dominantHz (out, (int) (0.5 * sampleRate));
             const float expected = 300.0f * std::pow (2.0f, shift / 12.0f);
-            ok &= allFinite (out) && std::abs (hz - expected) < 0.04f * expected;
+            const float hz = centreHz (out, (int) (0.5 * sampleRate), expected);
+            ok &= allFinite (out) && std::abs (hz - expected) < 0.02f * expected;
             detail += std::to_string ((int) shift) + " st: " + std::to_string ((int) hz) + " Hz (expected "
                     + std::to_string ((int) expected) + ")  ";
         }
