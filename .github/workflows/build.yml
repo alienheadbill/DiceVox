@@ -5,11 +5,13 @@ name: Build DiceVox
 #    so a feature branch gets a full packaging dry run without publishing anything.
 #  - Push to main      -> refreshes the "Latest build" release on the repo's main page
 #  - Push a tag v0.2.0 -> creates a permanent "v0.2.0" release
+#  - Push to a claude/* branch -> build + tests + installer only (nothing published)
 # Every zip contains DiceVox.vst3/ at its root plus licenses/ with the SIL OFL texts
-# of the fonts embedded in the plug-in (Issue #4).
+# of the fonts embedded in the plug-in (Issue #4). Windows also gets DiceVox-Setup.exe,
+# a one-click installer (installer/DiceVox.iss).
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -46,8 +48,19 @@ jobs:
 
       - name: Run offline tests
         shell: bash
+        env:
+          # The tests also render the editor to PNGs here, for design review.
+          DICEVOX_SNAPSHOT_DIR: ui-snapshots
         run: |
           if [ -f build/Release/DiceVoxTests.exe ]; then build/Release/DiceVoxTests.exe; else build/DiceVoxTests; fi
+
+      - name: Upload UI snapshots
+        if: matrix.name == 'Windows' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiceVox-UI-Snapshots
+          path: ui-snapshots/
+          if-no-files-found: ignore
 
       - name: Stage package (DiceVox.vst3 + font licences)
         shell: bash
@@ -60,6 +73,24 @@ jobs:
           # Same layout as the release zip: DiceVox.vst3/ (ready to drop into
           # C:\Program Files\Common Files\VST3) + licenses/ (font licence texts).
           path: package/
+
+      - name: Build Windows installer (DiceVox-Setup.exe)
+        if: matrix.name == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+          $version = (Select-String -Path CMakeLists.txt -Pattern 'project\(DiceVox VERSION ([0-9.]+)\)').Matches[0].Groups[1].Value
+          & $iscc /Qp "/DSourceDir=$PWD\package" "/DAppVersion=$version" "/DOutputDir=$PWD\installer-out" installer\DiceVox.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item installer-out\DiceVox-Setup.exe | Format-List Name, Length
+
+      - name: Upload Windows installer
+        if: matrix.name == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiceVox-Windows-Installer
+          path: installer-out/DiceVox-Setup.exe
 
   package:
     # Builds the exact zips a release would publish and checks them. Runs on every
@@ -86,6 +117,8 @@ jobs:
           done
           # One-click updater for Windows (download once; it updates DiceVox from then on)
           (cd tools/updater && zip -q "$GITHUB_WORKSPACE/release/AHE-Updater-Windows.zip" Update-DiceVox.cmd Update-DiceVox.ps1)
+          # One-click installer for Windows
+          cp dist/DiceVox-Windows-Installer/DiceVox-Setup.exe release/
           ls -l release
 
       - name: Check packages (layout, binaries, unmodified OFL notices, no raw fonts)
@@ -121,7 +154,11 @@ jobs:
         run: |
           NOTES="Built from commit ${GITHUB_SHA::7}.
 
-          **Easiest (Windows):** download AHE-Updater-Windows.zip once, unzip it, and double-click Update-DiceVox.cmd.
+          **Install (Windows, one click):** download DiceVox-Setup.exe and run it, then in FL Studio use
+          Options > Manage plugins > Find installed plugins. Windows may warn that the installer is unsigned:
+          click More info > Run anyway.
+
+          **Auto-updates (Windows):** download AHE-Updater-Windows.zip once, unzip it, and double-click Update-DiceVox.cmd.
           It installs DiceVox and puts an 'Update DiceVox' shortcut on your desktop for future updates.
 
           **Install (Windows):** unzip DiceVox-Windows.zip, copy the DiceVox.vst3 folder into
@@ -134,11 +171,11 @@ jobs:
           Their licence texts are in the licenses/ folder of each DiceVox zip."
 
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            gh release create "$GITHUB_REF_NAME" DiceVox-*.zip AHE-Updater-Windows.zip -R "$GITHUB_REPOSITORY" \
+            gh release create "$GITHUB_REF_NAME" DiceVox-*.zip DiceVox-Setup.exe AHE-Updater-Windows.zip -R "$GITHUB_REPOSITORY" \
               --title "DiceVox $GITHUB_REF_NAME" --notes "$NOTES" --latest
           else
             gh release delete latest-build -R "$GITHUB_REPOSITORY" --cleanup-tag -y || true
-            gh release create latest-build DiceVox-*.zip AHE-Updater-Windows.zip -R "$GITHUB_REPOSITORY" \
+            gh release create latest-build DiceVox-*.zip DiceVox-Setup.exe AHE-Updater-Windows.zip -R "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --title "Latest build" --notes "$NOTES" --latest
           fi
 

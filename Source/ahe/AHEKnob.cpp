@@ -41,6 +41,14 @@ namespace ahe
         }
     }
 
+    void Knob::setCompact (bool shouldBeCompact)
+    {
+        slider.getProperties().set ("ahe.compact", shouldBeCompact);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 90, shouldBeCompact ? 16 : 20);
+        nameLabel.setFont (juce::Font (font::label (shouldBeCompact ? 10.0f : 11.0f)));
+        resized();
+    }
+
     void Knob::resized()
     {
         auto area = getLocalBounds();

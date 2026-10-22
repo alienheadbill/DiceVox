@@ -14,7 +14,10 @@
 // memory is cleared before it fades back in.
 //
 // Modules, in signal order (registered in FxChain.cpp):
-//   Phase 2A: filter
+//   filter -> pitch -> drive -> lofi -> alien -> chorus -> chop -> reverse -> delay -> reverb
+//
+// Parameters are added in release order instead (v1 modules first, newer ones
+// appended), so parameter lists stay stable as modules are added.
 // ---------------------------------------------------------------------------
 class FxChain
 {
@@ -26,20 +29,25 @@ public:
 
     void prepare (const juce::dsp::ProcessSpec& spec);
     void reset();
+    void setHostTempo (double bpm);
+    void setHostPosition (double ppq);
     void process (juce::dsp::AudioBlock<float>& block);
 
     int getLatencySamples() const;
     int getNumModules() const noexcept { return (int) modules.size(); }
-    EffectModule& getModule (int index) { return *modules[(size_t) index]; }
+    EffectModule& getModule (int index) { return *modules[(size_t) index]; } // signal order
+    const juce::StringArray& getModuleIdsInParameterOrder() const noexcept { return parameterOrder; }
 
     static juce::String enabledParamId (const juce::String& moduleId) { return moduleId + "_on"; }
 
     static constexpr double switchFadeSeconds = 0.01;
 
 private:
+    void processChunk (juce::dsp::AudioBlock<float>& block);
     void processCrossfading (size_t index, juce::dsp::AudioBlock<float>& block);
 
-    std::vector<std::unique_ptr<EffectModule>> modules;
+    std::vector<std::unique_ptr<EffectModule>> modules; // signal order
+    juce::StringArray parameterOrder;                   // module IDs, release order
     std::vector<std::atomic<float>*> enabledFlags; // one per module, same order
     std::vector<juce::SmoothedValue<float>> fades;  // 0 = off, 1 = on, same order
 

@@ -13,7 +13,7 @@
 // Rules for a module:
 //  - Parameter IDs must start with getId() + "_"  (e.g. "delay_time").
 //  - process() runs on the audio thread: no allocation, no locks.
-//  - Randomizing is NOT done here. The randomizer engine (Phase 3) works on
+//  - Randomizing is NOT done here. The dice (Source/dice/DiceRoller) works on
 //    parameter IDs and ranges, so modules stay pure DSP.
 // ---------------------------------------------------------------------------
 class EffectModule
@@ -46,4 +46,11 @@ public:
 
     // Extra latency this module adds, in samples (pitch shifters need this).
     virtual int getLatencySamples() const { return 0; }
+
+    // Host tempo in BPM, sent before every block (tempo-synced effects use it).
+    virtual void setHostTempo (double /*bpm*/) {}
+
+    // Song position in quarter notes at the start of the next block, sent only
+    // while the host is playing (beat-locked effects line up with it).
+    virtual void setHostPosition (double /*ppq*/) {}
 };

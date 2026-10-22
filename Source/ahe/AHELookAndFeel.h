@@ -17,6 +17,13 @@ namespace ahe
     //   role::bypass  ToggleButton drawn as a status switch. Uses properties
     //                 "ahe.onText" / "ahe.offText" for the label in each state and
     //                 "ahe.onMeansActive" (bool) to say whether ON = processing.
+    //   role::primary TextButton drawn as the big purple main action (ROLL).
+    //   role::lock    toggling TextButton drawn as a padlock: closed + purple
+    //                 when on, open + muted when off (shape, not just colour).
+    //   role::segment TextButton in a segmented choice: the selected one is
+    //                 lit (purple fill + outline, bright text).
+    // A Slider with the "ahe.compact" property gets a smaller value read-out
+    // (for small knobs, e.g. inside effect cards).
     // -----------------------------------------------------------------------
     class LookAndFeel : public juce::LookAndFeel_V4
     {
@@ -36,6 +43,8 @@ namespace ahe
         void drawButtonText (juce::Graphics&, juce::TextButton&, bool isHighlighted, bool isDown) override;
         void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool isHighlighted, bool isDown) override;
         juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+        void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
+                           int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
 
         // Any text drawn with JUCE's default font (typed values, tooltips, menus)
         // uses the embedded Inter instead of the system font.
@@ -60,6 +69,11 @@ namespace ahe
                                juce::Colour fill = theme::colour::panel,
                                juce::Colour outline = theme::colour::border);
         static void drawFocusRing (juce::Graphics&, juce::Rectangle<float> area, float cornerRadius);
+
+        // "Alien tech" glass: frosted gradient, top sheen, hairline outline and,
+        // optionally, HUD corner brackets.
+        static void drawGlass (juce::Graphics&, juce::Rectangle<float> area, float cornerRadius,
+                               juce::Colour outline = theme::colour::border, bool brackets = false);
 
     private:
         bool keyboardNavigationActive = false;

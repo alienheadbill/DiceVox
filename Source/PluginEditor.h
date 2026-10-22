@@ -6,17 +6,24 @@
 #include "ahe/AHEHeader.h"
 #include "ahe/AHEKnob.h"
 #include "ui/RollChamber.h"
+#include "ui/EffectCard.h"
+#include "ui/PresetBar.h"
+#include "ui/SignalScope.h"
 
 // ---------------------------------------------------------------------------
-// DiceVox editor — UI milestone 01 (AHE Audio visual shell).
+// DiceVox editor.
 //
-// Interactive now:  Input / Mix / Output knobs, Bypass switch (same APVTS
-//                   attachments and parameter IDs as Phase 1), QUICK tab.
-// Shown, disabled:  ROLL chamber (Phase 3), ADVANCED tab (Phase 5).
+//   header            (SIMPLE | ADVANCED tabs, preset bar: < preset menu > SAVE)
+//   ROLL chamber      (ROLL / BACK, style, intensity, name of the current roll)
+//   effect cards      (ADVANCED only: two rows, signal order: ON/OFF, lock, knobs)
+//   Bypass  ·  Input / Mix / Output
 //
-// Everything is laid out on a 520x360 design canvas ("content") that is scaled
-// as a whole when the window is resized (100%-150%, fixed aspect ratio), so the
-// layout never reflows and vector drawing stays crisp at every size.
+// SIMPLE is just the dice (860x292); ADVANCED adds every effect (860x780).
+// The chosen view is saved with the project; new instances open on SIMPLE.
+//
+// Everything is laid out on a design canvas ("content") that is scaled as a
+// whole when the window is resized (80%-130%, fixed aspect ratio), so the
+// layout never reflows and vector drawing stays crisp.
 // ---------------------------------------------------------------------------
 class DiceVoxEditor : public juce::AudioProcessorEditor
 {
@@ -27,11 +34,22 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    static constexpr int designWidth  = 520;
-    static constexpr int designHeight = 360;
-    static constexpr double maxScale  = 1.5;
+    // Switch between SIMPLE (dice only) and ADVANCED (every effect); the
+    // window resizes to fit and keeps its current zoom.
+    void setAdvancedView (bool advanced);
+    bool isAdvancedView() const noexcept { return advancedView; }
+
+    static constexpr int designWidth  = 860;
+    static constexpr int designHeight = 780; // ADVANCED
+    static constexpr int simpleHeight = 292; // SIMPLE
+    static constexpr double minScale  = 0.8;
+    static constexpr double maxScale  = 1.3;
+
+    static constexpr auto viewProperty = "uiAdvanced"; // in the processor's state tree
 
 private:
+    int currentDesignHeight() const noexcept { return advancedView ? designHeight : simpleHeight; }
+
     class Content : public juce::Component
     {
     public:
@@ -39,17 +57,31 @@ private:
         void paint (juce::Graphics&) override;
         void resized() override;
 
+        void setAdvanced (bool advanced);
+        std::function<void (bool advanced)> onViewChosen; // a tab was clicked
+
     private:
         ahe::Header header { "DiceVox" };
-        juce::TextButton quickTab { "QUICK" }, advancedTab { "ADVANCED" };
+        juce::TextButton simpleTab { "SIMPLE" }, advancedTab { "ADVANCED" };
+        bool advanced = false;
+        PresetBar presetBar;
         RollChamber roll;
+        std::vector<std::unique_ptr<EffectCard>> cards;
         ahe::Knob inputKnob, mixKnob, outputKnob;
+        SignalScope scope;
+        juce::Rectangle<int> versionArea;
         juce::ToggleButton bypassSwitch;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
-        juce::Rectangle<int> footerArea;
+        juce::Rectangle<int> bottomArea;
+
+        struct Star { float x, y, size, alpha; };
+        std::vector<Star> stars; // background starfield, generated once
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Content)
     };
+
+    DiceVoxProcessor& processorRef;
+    bool advancedView = false;
 
     // Declared first so it outlives every component that uses it.
     ahe::LookAndFeel lookAndFeel;

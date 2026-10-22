@@ -24,6 +24,10 @@ namespace ahe
 
         void resized() override;
 
+        // Smaller name and value text, for knobs inside effect cards. Call it
+        // before the editor applies its look-and-feel (i.e. at construction).
+        void setCompact (bool shouldBeCompact);
+
         juce::Slider& getSlider() noexcept { return slider; }
         const juce::String& getParameterId() const noexcept { return paramId; }
 

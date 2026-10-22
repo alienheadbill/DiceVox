@@ -1,18 +1,50 @@
 #include "FxChain.h"
 #include "FilterModule.h"
+#include "DriveModule.h"
+#include "ChorusModule.h"
+#include "DelayModule.h"
+#include "ReverbModule.h"
+#include "PitchModule.h"
+#include "LoFiModule.h"
+#include "ChopModule.h"
+#include "ReverseModule.h"
+#include "AlienModule.h"
 
 FxChain::FxChain()
 {
-    // Signal-chain order. Phase 2B/2C add saturation, then delay, after the filter.
+    // Signal-chain order: shape and pitch the voice, add grit and texture,
+    // widen, chop, then reverse swells, echoes and space.
     modules.push_back (std::make_unique<FilterModule>());
+    modules.push_back (std::make_unique<PitchModule>());
+    modules.push_back (std::make_unique<DriveModule>());
+    modules.push_back (std::make_unique<LoFiModule>());
+    modules.push_back (std::make_unique<AlienModule>());
+    modules.push_back (std::make_unique<ChorusModule>());
+    modules.push_back (std::make_unique<ChopModule>());
+    modules.push_back (std::make_unique<ReverseModule>());
+    modules.push_back (std::make_unique<DelayModule>());
+    modules.push_back (std::make_unique<ReverbModule>());
+
+    // Parameter order: the order modules were released in. Append new modules
+    // at the end; never reorder or remove one after release.
+    parameterOrder = juce::StringArray { "filter", "drive", "chorus", "delay", "reverb", // v1
+                                         "pitch", "lofi", "chop", "reverse", "alien" };   // v2
+    jassert (parameterOrder.size() == (int) modules.size());
 
     fades.resize (modules.size());
 }
 
 void FxChain::addParameters (EffectModule::ParamList& params) const
 {
-    for (auto& m : modules)
+    for (auto& id : parameterOrder)
     {
+        const auto it = std::find_if (modules.begin(), modules.end(),
+                                      [&] (const std::unique_ptr<EffectModule>& m) { return m->getId() == id; });
+        jassert (it != modules.end());
+        if (it == modules.end())
+            continue;
+
+        auto& m = *it;
         params.push_back (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { enabledParamId (m->getId()), m->getParameterVersion() },
             m->getDisplayName() + " On",
@@ -55,7 +87,32 @@ void FxChain::reset()
         m->reset();
 }
 
+void FxChain::setHostTempo (double bpm)
+{
+    for (auto& m : modules)
+        m->setHostTempo (bpm);
+}
+
+void FxChain::setHostPosition (double ppq)
+{
+    for (auto& m : modules)
+        m->setHostPosition (ppq);
+}
+
 void FxChain::process (juce::dsp::AudioBlock<float>& block)
+{
+    // Hosts may occasionally send more than the prepared block size. Modules
+    // only ever see blocks up to that size (some JUCE effects need this).
+    const auto chunkSize = (size_t) juce::jmax (1, scratch.getNumSamples());
+
+    for (size_t start = 0; start < block.getNumSamples(); start += chunkSize)
+    {
+        auto chunk = block.getSubBlock (start, juce::jmin (chunkSize, block.getNumSamples() - start));
+        processChunk (chunk);
+    }
+}
+
+void FxChain::processChunk (juce::dsp::AudioBlock<float>& block)
 {
     juce::dsp::ProcessContextReplacing<float> context (block);
 

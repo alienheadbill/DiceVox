@@ -44,11 +44,19 @@ namespace ahe
 
     void Header::paint (juce::Graphics& g)
     {
+        // Glass bar with a glowing rule along the bottom, brightest in the middle.
         auto bounds = getLocalBounds().toFloat();
-        g.setColour (colour::panel);
+        juce::ColourGradient bar (colour::raised.withAlpha (0.85f), 0.0f, bounds.getY(),
+                                  colour::panel.withAlpha (0.92f), 0.0f, bounds.getBottom(), false);
+        g.setGradientFill (bar);
         g.fillRect (bounds);
-        g.setColour (colour::border);
-        g.fillRect (bounds.removeFromBottom (1.0f));
+
+        auto rule = bounds.removeFromBottom (1.0f);
+        juce::ColourGradient glow (colour::purpleSoft.withAlpha (0.08f), rule.getX(), rule.getY(),
+                                   colour::purpleSoft.withAlpha (0.08f), rule.getRight(), rule.getY(), false);
+        glow.addColour (0.5, colour::purpleSoft.withAlpha (0.7f));
+        g.setGradientFill (glow);
+        g.fillRect (rule);
 
         if (alienMark != nullptr)
             alienMark->drawWithin (g, markArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);

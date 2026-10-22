@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Params.h"
+#include "dice/DiceRoller.h"
+#include "presets/FactoryPresets.h"
 
 DiceVoxProcessor::DiceVoxProcessor()
     : AudioProcessor (BusesProperties()
@@ -67,11 +69,29 @@ void DiceVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         buffer.clear (ch, 0, buffer.getNumSamples());
 
     if (bypassFlag->load() > 0.5f)
+    {
+        feedScope (buffer); // the scope shows the untouched vocal while bypassed
         return; // TODO (Phase 2+): delay the dry signal by the chain latency while bypassed
+    }
 
     inputGain.setGainDecibels  (inputGainDb->load());
     outputGain.setGainDecibels (outputGainDb->load());
     dryWet.setWetMixProportion (mixPercent->load() / 100.0f);
+
+    // Tempo-synced effects follow the host (they keep 120 BPM if it sends none).
+    if (auto* playHead = getPlayHead())
+    {
+        if (const auto position = playHead->getPosition())
+        {
+            if (const auto bpm = position->getBpm())
+                chain.setHostTempo (*bpm);
+
+            // Beat-locked effects (Chop) follow the song position while playing.
+            if (position->getIsPlaying())
+                if (const auto ppq = position->getPpqPosition())
+                    chain.setHostPosition (*ppq);
+        }
+    }
 
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
@@ -81,6 +101,38 @@ void DiceVoxProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     chain.process (block);
     dryWet.mixWetSamples (block);
     outputGain.process (context);
+
+    feedScope (buffer);
+}
+
+void DiceVoxProcessor::feedScope (const juce::AudioBuffer<float>& buffer) noexcept
+{
+    // One peak per scopeStep samples into a small ring the editor reads.
+    // Lock-free: relaxed stores per point, the write index published last.
+    const int numChannels = buffer.getNumChannels();
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    {
+        float peak = 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch)
+            peak = juce::jmax (peak, std::abs (buffer.getSample (ch, i)));
+        scopeAccum = juce::jmax (scopeAccum, peak);
+
+        if (++scopeCount >= scopeStep)
+        {
+            const int w = scopeWrite.load (std::memory_order_relaxed);
+            scope[(size_t) w].store (scopeAccum, std::memory_order_relaxed);
+            scopeWrite.store ((w + 1) % scopeSize, std::memory_order_release);
+            scopeAccum = 0.0f;
+            scopeCount = 0;
+        }
+    }
+}
+
+void DiceVoxProcessor::copyScope (float* dest) const noexcept
+{
+    const int start = scopeWrite.load (std::memory_order_acquire); // oldest point
+    for (int i = 0; i < scopeSize; ++i)
+        dest[i] = scope[(size_t) ((start + i) % scopeSize)].load (std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* DiceVoxProcessor::createEditor()
@@ -102,8 +154,177 @@ void DiceVoxProcessor::getStateInformation (juce::MemoryBlock& destData)
 void DiceVoxProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
         if (xml->hasTagName (state.state.getType()))
+        {
             state.replaceState (juce::ValueTree::fromXml (*xml));
+            rollHistory.clear(); // BACK never jumps to a different project's sound
+        }
+    }
+}
+
+// ============================================================================
+// Dice
+// ============================================================================
+juce::String DiceVoxProcessor::rollDice()
+{
+    return rollDice (diceRandom);
+}
+
+namespace
+{
+    // Marks a BACK snapshot taken before a preset load: BACK then also restores
+    // Input / Mix / Output, which a preset sets but a roll never touches.
+    const juce::Identifier beforePresetProperty { "beforePreset" };
+
+    void setParameterValue (juce::RangedAudioParameter& param, float value)
+    {
+        param.beginChangeGesture();
+        param.setValueNotifyingHost (param.convertTo0to1 (value));
+        param.endChangeGesture();
+    }
+}
+
+void DiceVoxProcessor::pushHistory()
+{
+    rollHistory.push_back (state.copyState());
+    if (rollHistory.size() > maxRollHistory)
+        rollHistory.erase (rollHistory.begin());
+}
+
+juce::String DiceVoxProcessor::rollDice (juce::Random& rng)
+{
+    pushHistory();
+
+    const auto name = DiceRoller::roll (state, rng);
+    state.state.setProperty (rollNameProperty, name, nullptr);
+    state.state.setProperty (presetNameProperty, juce::String(), nullptr); // a new sound, no longer the preset
+    return name;
+}
+
+bool DiceVoxProcessor::undoRoll()
+{
+    if (rollHistory.empty())
+        return false;
+
+    const auto snapshot = rollHistory.back();
+    rollHistory.pop_back();
+
+    // Restore every effect parameter. Bypass and the dice controls are left
+    // alone; Input / Mix / Output only come back when BACK undoes a preset load
+    // (the dice never changes them, so BACK after a roll shouldn't either).
+    const bool beforePreset = (bool) snapshot.getProperty (beforePresetProperty, false);
+    const juce::StringArray globals { ParamIDs::inputGain, ParamIDs::outputGain, ParamIDs::mix };
+
+    for (auto* param : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+        if (ranged == nullptr || ! PresetStore::isPresetParameter (ranged->getParameterID()))
+            continue;
+        if (! beforePreset && globals.contains (ranged->getParameterID()))
+            continue;
+
+        const auto saved = snapshot.getChildWithProperty ("id", ranged->getParameterID());
+        if (saved.isValid())
+            setParameterValue (*ranged, (float) saved.getProperty ("value"));
+    }
+
+    state.state.setProperty (rollNameProperty, snapshot.getProperty (rollNameProperty), nullptr);
+    state.state.setProperty (presetNameProperty, snapshot.getProperty (presetNameProperty), nullptr);
+    state.state.setProperty (presetFactoryProperty, snapshot.getProperty (presetFactoryProperty, false), nullptr);
+    return true;
+}
+
+juce::String DiceVoxProcessor::getRollName() const
+{
+    return state.state.getProperty (rollNameProperty).toString();
+}
+
+// ============================================================================
+// Presets
+// ============================================================================
+juce::File DiceVoxProcessor::savePreset (const juce::String& name)
+{
+    const auto file = presets.save (state, name, getRollName());
+    if (file.existsAsFile())
+    {
+        state.state.setProperty (presetNameProperty, PresetStore::nameOf (file), nullptr);
+        state.state.setProperty (presetFactoryProperty, false, nullptr);
+    }
+    return file;
+}
+
+void DiceVoxProcessor::applyPreset (const juce::XmlElement& xml, const juce::String& name, bool factory)
+{
+    pushHistory();
+    rollHistory.back().setProperty (beforePresetProperty, true, nullptr);
+
+    // Every sound parameter: the preset's value, or the default if the preset
+    // doesn't list it (older presets, and factory presets, which only list
+    // what they change).
+    for (auto* param : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+        if (ranged == nullptr || ! PresetStore::isPresetParameter (ranged->getParameterID()))
+            continue;
+
+        const auto* saved = xml.getChildByAttribute ("id", ranged->getParameterID());
+        const float value = saved != nullptr ? (float) saved->getDoubleAttribute ("value")
+                                             : ranged->convertFrom0to1 (ranged->getDefaultValue());
+        setParameterValue (*ranged, value);
+    }
+
+    state.state.setProperty (rollNameProperty, xml.getStringAttribute ("rollName"), nullptr);
+    state.state.setProperty (presetNameProperty, name, nullptr);
+    state.state.setProperty (presetFactoryProperty, factory, nullptr);
+}
+
+bool DiceVoxProcessor::loadPreset (const juce::File& file)
+{
+    const auto xml = PresetStore::read (file);
+    if (xml == nullptr)
+        return false;
+
+    applyPreset (*xml, PresetStore::nameOf (file), false);
+    return true;
+}
+
+std::vector<DiceVoxProcessor::PresetEntry> DiceVoxProcessor::getPresetList() const
+{
+    std::vector<PresetEntry> list;
+    for (int i = 0; i < FactoryPresets::count(); ++i)
+        list.push_back ({ FactoryPresets::name (i), i, {} });
+    for (auto& file : presets.list())
+        list.push_back ({ PresetStore::nameOf (file), -1, file });
+    return list;
+}
+
+bool DiceVoxProcessor::loadPreset (const PresetEntry& entry)
+{
+    if (! entry.isFactory())
+        return loadPreset (entry.file);
+
+    const auto xml = FactoryPresets::create (entry.factoryIndex);
+    if (xml == nullptr)
+        return false;
+
+    applyPreset (*xml, entry.name, true);
+    return true;
+}
+
+juce::String DiceVoxProcessor::getPresetName() const
+{
+    return state.state.getProperty (presetNameProperty).toString();
+}
+
+bool DiceVoxProcessor::isFactoryPresetLoaded() const
+{
+    return (bool) state.state.getProperty (presetFactoryProperty, false);
+}
+
+bool DiceVoxProcessor::isCurrentPreset (const PresetEntry& entry) const
+{
+    return getPresetName().isNotEmpty() && entry.name == getPresetName() && entry.isFactory() == isFactoryPresetLoaded();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

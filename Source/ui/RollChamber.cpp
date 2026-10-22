@@ -1,78 +1,222 @@
 #include "RollChamber.h"
+#include "PluginProcessor.h"
+#include "Params.h"
+#include "dice/DiceRoller.h"
 #include "ahe/AHEBrandMarks.h"
 #include "ahe/AHELookAndFeel.h"
 
 using namespace ahe::theme;
 
-RollChamber::RollChamber()
-    : ufo (ahe::brand::ufoIcon())
+RollChamber::RollChamber (DiceVoxProcessor& p)
+    : processor (p), ufo (ahe::brand::ufoIcon()),
+      levelSelector (p.state, ParamIDs::diceLevel, juce::StringArray { "LOW", "MED", "HIGH" },
+                     "How wild ROLL goes. LOW: 1-2 subtle effects. MED: 2-4 effects. HIGH: 3-5 effects pushed hard.")
 {
-    // While ROLL is unavailable the UFO is drawn in a single muted tone: the
-    // brand green means "processing is on", so it must not appear on a control
-    // that does nothing yet. Phase 3 restores the full-colour mark.
-    if (ufo != nullptr)
-        ahe::brand::makeMonochrome (*ufo, colour::textMuted);
+    rollButton.getProperties().set (roleProperty, role::primary);
+    rollButton.setTooltip ("ROLL: build a new random vocal chain in the chosen style. "
+                           "Locked effects stay as they are; Input, Mix and Output are never changed.");
+    rollButton.setTitle ("Roll");
+    rollButton.setWantsKeyboardFocus (true);
+    rollButton.onClick = [this]
+    {
+        processor.rollDice();
+        refresh();
 
-    setTooltip (juce::String ("ROLL is not available yet. ") + unavailableText
-                + ": one click will build a new vocal effect chain.");
-    setTitle ("Roll (unavailable)");
-    setDescription (unavailableText);
+        // Tractor beam: the UFO beams the new sound down (a short animation).
+        beamStart = juce::Time::getMillisecondCounterHiRes();
+        startTimerHz (60);
+    };
+    addAndMakeVisible (rollButton);
+
+    backButton.setTooltip ("BACK: return to the effects you had before the last roll.");
+    backButton.setTitle ("Back to the previous roll");
+    backButton.setWantsKeyboardFocus (true);
+    backButton.onClick = [this] { processor.undoRoll(); refresh(); };
+    addAndMakeVisible (backButton);
+
+    // Style: the item IDs are 1-based, in the parameter's choice order.
+    styleBox.addItemList (DiceRoller::styleNames(), 1);
+    styleBox.setTooltip ("STYLE steers what ROLL picks.\n"
+                         "Any Vibe: a bit of everything.\n"
+                         "Dreamy Pop: airy doubles, slap and dotted echoes, big glossy reverb.\n"
+                         "Dark Toy Box: lo-fi crunch, telephone filters, eerie pitch doubles.\n"
+                         "Pitched Rage: pitched-up or -down vocals, grit, echo throws, chops.\n"
+                         "Lo-Fi Bedroom: tape wobble, crushed and muffled, roomy.\n"
+                         "Glitch: stutter chops, reverse swells, pitch jumps.\n"
+                         "Area 51: mothership choirs, crop-circle radio, android abductions.");
+    styleBox.setTitle ("Dice style");
+    styleBox.setComponentID (ParamIDs::diceStyle);
+    addAndMakeVisible (styleBox);
+    styleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        p.state, ParamIDs::diceStyle, styleBox);
+
+    addAndMakeVisible (levelSelector);
+
+    refresh();
+    startTimerHz (8);
+}
+
+void RollChamber::refresh()
+{
+    // Active effects, in chain order.
+    juce::StringArray active;
+    for (int i = 0; i < processor.chain.getNumModules(); ++i)
+    {
+        auto& module = processor.chain.getModule (i);
+        if (auto* on = processor.state.getRawParameterValue (FxChain::enabledParamId (module.getId())))
+            if (on->load() > 0.5f)
+                active.add (module.getDisplayName());
+    }
+
+    const auto rollName = processor.getRollName();
+    auto newTitle = rollName.isNotEmpty() ? rollName.toUpperCase()
+                                          : juce::String (active.isEmpty() ? emptyTitle : "CUSTOM CHAIN");
+    auto newSummary = active.isEmpty() ? juce::String (emptySummary)
+                                       : active.joinIntoString (juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")));
+
+    if (newTitle != title || newSummary != summary)
+    {
+        title = newTitle;
+        summary = newSummary;
+        setTitle ("Roll: " + title);
+        setDescription (summary);
+        repaint();
+    }
+
+    backButton.setEnabled (processor.canUndoRoll());
+}
+
+void RollChamber::timerCallback()
+{
+    refresh();
+
+    if (beamStart >= 0.0)
+    {
+        repaint (iconArea.expanded (8, 6).withBottom (getHeight()));
+        if (juce::Time::getMillisecondCounterHiRes() - beamStart > beamMs)
+        {
+            beamStart = -1.0;
+            startTimerHz (8); // back to the slow refresh
+            repaint();
+        }
+    }
+}
+
+void RollChamber::resized()
+{
+    auto area = getLocalBounds().reduced (space::l, space::m);
+
+    rollButton.setBounds (area.removeFromRight (140));
+    area.removeFromRight (space::m);
+    backButton.setBounds (area.removeFromRight (66).withSizeKeepingCentre (66, 32));
+    area.removeFromRight (space::m);
+    {
+        // STYLE label, style menu, and the LOW / MED / HIGH row under it.
+        auto column = area.removeFromRight (160);
+        styleLabelArea = column.removeFromTop (14);
+        column.removeFromTop (2);
+        styleBox.setBounds (column.removeFromTop (26));
+        column.removeFromTop (space::xs);
+        levelSelector.setBounds (column.removeFromTop (22));
+    }
+    area.removeFromRight (space::l);
+
+    iconArea = area.removeFromLeft (area.getHeight());
+    area.removeFromLeft (space::m);
+    textArea = area;
+}
+
+float RollChamber::beamAmount() const
+{
+    if (beamStart < 0.0)
+        return 0.0f;
+    const auto t = (juce::Time::getMillisecondCounterHiRes() - beamStart) / beamMs;
+    return t >= 1.0 ? 0.0f : (float) std::sin (juce::MathConstants<double>::pi * t); // up, then fade out
 }
 
 void RollChamber::paint (juce::Graphics& g)
 {
-    auto area = getLocalBounds().toFloat().reduced (1.0f);
+    ahe::LookAndFeel::drawGlass (g, getLocalBounds().toFloat().reduced (0.5f), radius::hero,
+                                 colour::purpleSoft.withAlpha (0.3f), true);
 
-    // Chamber surface with a dashed outline: reads as "slot reserved", not "button".
-    g.setColour (colour::panel);
-    g.fillRoundedRectangle (area, radius::hero);
+    // Scanner rings behind the UFO, with crosshair ticks: the "radar" it rolls from.
     {
-        juce::Path outline, dashed;
-        outline.addRoundedRectangle (area.reduced (0.5f), radius::hero);
-        const float dashes[] = { 6.0f, 4.0f };
-        juce::PathStrokeType (1.2f).createDashedStroke (dashed, outline, dashes, 2);
-        g.setColour (colour::border.brighter (0.15f));
-        g.fillPath (dashed);
+        const auto c = iconArea.toFloat().getCentre();
+        const float base = (float) iconArea.getHeight() * 0.5f;
+        for (int i = 0; i < 3; ++i)
+        {
+            const float r = base * (0.75f + 0.38f * (float) i);
+            g.setColour (colour::purpleSoft.withAlpha (0.16f - 0.04f * (float) i));
+            g.drawEllipse (juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c), 1.0f);
+        }
+        g.setColour (colour::purpleSoft.withAlpha (0.18f));
+        const float outer = base * 1.55f, inner = base * 1.3f;
+        for (float a : { 0.0f, juce::MathConstants<float>::halfPi, juce::MathConstants<float>::pi, -juce::MathConstants<float>::halfPi })
+            g.drawLine ({ c.getPointOnCircumference (inner, a), c.getPointOnCircumference (outer, a) }, 1.0f);
     }
 
-    // Centre the icon + text group in the chamber.
-    const juce::Font titleFont (font::display (34.0f));
-    const juce::Font pillFont (font::label (9.5f));
-    const juce::Font infoFont (font::body (12.5f));
-    const juce::String pillText ("NOT AVAILABLE YET");
+    // Energy glow behind ROLL (drawn here, so it can spill past the button's edge).
+    {
+        auto glowArea = rollButton.getBounds().toFloat();
+        for (int i = 3; i >= 1; --i)
+        {
+            g.setColour (colour::brandPurple.withAlpha (0.07f));
+            g.fillRoundedRectangle (glowArea.expanded (2.5f * (float) i), radius::card + 2.5f * (float) i);
+        }
+    }
 
-    const float iconSize = area.getHeight() - 2.0f * (float) space::l;
-    const float titleW   = (float) juce::GlyphArrangement::getStringWidthInt (titleFont, "ROLL");
-    const float pillW    = (float) juce::GlyphArrangement::getStringWidthInt (pillFont, pillText) + 16.0f;
-    const float infoW    = (float) juce::GlyphArrangement::getStringWidthInt (infoFont, unavailableText);
-    const float textW    = juce::jmax (titleW + (float) space::l + pillW, infoW);
-    const float groupW   = iconSize + (float) space::xl + textW;
+    // Tractor beam under the UFO after a ROLL (purple light: green is kept for
+    // "processing is on"), with the UFO bobbing as it beams.
+    const float beam = beamAmount();
+    auto ufoArea = iconArea.toFloat().translated (0.0f, -3.0f * beam);
+    if (beam > 0.0f)
+    {
+        const float topY = ufoArea.getCentreY() + ufoArea.getHeight() * 0.12f;
+        const float bottomY = (float) getHeight() - 4.0f;
+        const float cx = ufoArea.getCentreX();
+        const float topHalf = ufoArea.getWidth() * 0.12f, bottomHalf = ufoArea.getWidth() * 0.5f;
 
-    auto group = area.withSizeKeepingCentre (groupW, iconSize);
+        juce::Path cone;
+        cone.startNewSubPath (cx - topHalf, topY);
+        cone.lineTo (cx + topHalf, topY);
+        cone.lineTo (cx + bottomHalf, bottomY);
+        cone.lineTo (cx - bottomHalf, bottomY);
+        cone.closeSubPath();
 
-    // UFO mark (secondary motif, decorative only)
-    auto iconArea = group.removeFromLeft (iconSize);
+        juce::ColourGradient light (colour::purpleSoft.withAlpha (0.55f * beam), cx, topY,
+                                    colour::purpleSoft.withAlpha (0.0f), cx, bottomY, false);
+        g.setGradientFill (light);
+        g.fillPath (cone);
+
+        // A few sparks drifting up the beam.
+        juce::Random sparks (7);
+        const float rise = 1.0f - beam;
+        for (int i = 0; i < 6; ++i)
+        {
+            const float y = bottomY - (bottomY - topY) * std::fmod (sparks.nextFloat() + rise, 1.0f);
+            const float span = topHalf + (bottomHalf - topHalf) * (y - topY) / (bottomY - topY);
+            const float x = cx + (sparks.nextFloat() * 2.0f - 1.0f) * span * 0.8f;
+            g.setColour (juce::Colours::white.withAlpha (0.8f * beam));
+            g.fillEllipse (x - 1.2f, y - 1.2f, 2.4f, 2.4f);
+        }
+    }
+
     if (ufo != nullptr)
-        ufo->drawWithin (g, iconArea, juce::RectanglePlacement::centred, 0.8f);
-    group.removeFromLeft ((float) space::xl);
-
-    auto title = group.removeFromTop (group.getHeight() * 0.56f);
-    auto info  = group.withTrimmedTop (2.0f);
-
-    g.setColour (colour::textMuted);
-    g.setFont (titleFont);
-    g.drawText ("ROLL", title.withWidth (titleW + 4.0f).toNearestInt(), juce::Justification::bottomLeft, false);
-
-    // Status pill next to the title: shape + text, never colour alone
-    auto pill = juce::Rectangle<float> (pillW, 17.0f)
-                    .withPosition (title.getX() + titleW + (float) space::l, title.getBottom() - 24.0f);
-    g.setColour (colour::textMuted);
-    g.drawRoundedRectangle (pill.reduced (0.5f), 8.5f, 1.0f);
-    g.setColour (colour::textSecondary);
-    g.setFont (pillFont);
-    g.drawText (pillText, pill.toNearestInt(), juce::Justification::centred, false);
+        ufo->drawWithin (g, ufoArea, juce::RectanglePlacement::centred, 1.0f);
 
     g.setColour (colour::textSecondary);
-    g.setFont (infoFont);
-    g.drawText (unavailableText, info.toNearestInt(), juce::Justification::topLeft, false);
+    g.setFont (juce::Font (font::label (10.0f)));
+    g.drawText ("STYLE  +  HOW WILD", styleLabelArea, juce::Justification::bottomLeft, false);
+
+    auto text = textArea;
+    auto titleArea = text.removeFromTop (text.getHeight() * 3 / 5);
+
+    g.setColour (colour::textPrimary);
+    g.setFont (juce::Font (font::display (26.0f)));
+    g.drawFittedText (title, titleArea, juce::Justification::bottomLeft, 1, 0.7f);
+
+    // The active chain as a HUD read-out: small tracked capitals in soft purple.
+    g.setColour (colour::purpleSoft.withAlpha (0.9f));
+    g.setFont (juce::Font (font::label (10.5f)));
+    g.drawFittedText (summary.toUpperCase(), text.withTrimmedTop (3), juce::Justification::topLeft, 2, 0.85f);
 }
