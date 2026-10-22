@@ -173,7 +173,7 @@ Tests for the updater: `powershell -File tools/updater/Test-Updater.ps1`
 ```
 Source/
   PluginProcessor.*   audio engine: input gain → dry tap → FxChain → mix → output gain
-  PluginEditor.*      DiceVox editor: SIMPLE (860x280) / ADVANCED (860x690) views, scales 80%-130%
+  PluginEditor.*      DiceVox editor: SIMPLE (860x292) / ADVANCED (860x780) views, scales 80%-130%
   Params.*            global parameter IDs + full parameter layout
   modules/
     EffectModule.h    interface every effect implements

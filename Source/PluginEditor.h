@@ -18,7 +18,7 @@
 //   effect cards      (ADVANCED only: two rows, signal order: ON/OFF, lock, knobs)
 //   Bypass  ·  Input / Mix / Output
 //
-// SIMPLE is just the dice (860x280); ADVANCED adds every effect (860x690).
+// SIMPLE is just the dice (860x292); ADVANCED adds every effect (860x780).
 // The chosen view is saved with the project; new instances open on SIMPLE.
 //
 // Everything is laid out on a design canvas ("content") that is scaled as a
@@ -40,8 +40,8 @@ public:
     bool isAdvancedView() const noexcept { return advancedView; }
 
     static constexpr int designWidth  = 860;
-    static constexpr int designHeight = 690; // ADVANCED
-    static constexpr int simpleHeight = 280; // SIMPLE
+    static constexpr int designHeight = 780; // ADVANCED
+    static constexpr int simpleHeight = 292; // SIMPLE
     static constexpr double minScale  = 0.8;
     static constexpr double maxScale  = 1.3;
 

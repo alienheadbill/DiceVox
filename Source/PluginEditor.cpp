@@ -71,7 +71,7 @@ void DiceVoxEditor::resized()
 }
 
 // ============================================================================
-// Content (the 860-wide design canvas: 280 tall in SIMPLE, 690 in ADVANCED)
+// Content (the 860-wide design canvas: 292 tall in SIMPLE, 780 in ADVANCED)
 // ============================================================================
 DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
     : presetBar (p),
@@ -217,7 +217,7 @@ void DiceVoxEditor::Content::resized()
     area.removeFromBottom (space::s);
 
     // Bottom row: bypass on the left, Input / Mix / Output in the middle
-    bottomArea = area.removeFromBottom (96);
+    bottomArea = area.removeFromBottom (108);
     {
         // Bypass (with the version under it) | Input / Mix / Output | live scope
         auto row = bottomArea.withTrimmedTop (space::s).reduced (space::l, space::xs);

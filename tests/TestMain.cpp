@@ -480,7 +480,7 @@ int main()
 
         // Opens on SIMPLE: just the dice, effect cards hidden, compact window.
         const bool simpleFirst = dvEditor != nullptr && ! dvEditor->isAdvancedView()
-                              && editor->getWidth() == 860 && editor->getHeight() == 280
+                              && editor->getWidth() == 860 && editor->getHeight() == 292
                               && ! visibleInTree (findById (*editor, "reverb_on"))
                               && visibleInTree (findById (*editor, ParamIDs::diceStyle))
                               && visibleInTree (findById (*editor, ParamIDs::mix));
@@ -489,11 +489,11 @@ int main()
         // ADVANCED: every effect, bigger window, and the choice is saved with the project.
         if (dvEditor != nullptr)
             dvEditor->setAdvancedView (true);
-        const bool advancedShown = editor->getWidth() == 860 && editor->getHeight() == 690
+        const bool advancedShown = editor->getWidth() == 860 && editor->getHeight() == 780
                                 && visibleInTree (findById (*editor, "reverb_on"))
                                 && (bool) p.state.state.getProperty (DiceVoxEditor::viewProperty, false);
         const std::string advancedSize = std::to_string (editor->getWidth()) + "x" + std::to_string (editor->getHeight());
-        check (simpleFirst && advancedShown, "Editor opens on SIMPLE (dice only, 860x280); ADVANCED shows every effect (860x690)",
+        check (simpleFirst && advancedShown, "Editor opens on SIMPLE (dice only, 860x292); ADVANCED shows every effect (860x780)",
                "simple " + simpleSize + ", advanced " + advancedSize);
 
         juce::StringArray missing, unwired;
@@ -525,10 +525,10 @@ int main()
         // and switching back to SIMPLE hides the effects again.
         editor.reset (p.createEditor());
         auto* reopened = dynamic_cast<DiceVoxEditor*> (editor.get());
-        const bool remembered = reopened != nullptr && reopened->isAdvancedView() && editor->getHeight() == 690;
+        const bool remembered = reopened != nullptr && reopened->isAdvancedView() && editor->getHeight() == 780;
         if (reopened != nullptr)
             reopened->setAdvancedView (false);
-        check (remembered && editor->getHeight() == 280 && ! visibleInTree (findById (*editor, "reverb_on")),
+        check (remembered && editor->getHeight() == 292 && ! visibleInTree (findById (*editor, "reverb_on")),
                "The SIMPLE / ADVANCED choice is remembered and can be switched back");
     }
     {
