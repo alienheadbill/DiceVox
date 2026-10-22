@@ -14,7 +14,7 @@
 // memory is cleared before it fades back in.
 //
 // Modules, in signal order (registered in FxChain.cpp):
-//   filter -> pitch -> drive -> lofi -> chorus -> chop -> reverse -> delay -> reverb
+//   filter -> pitch -> drive -> lofi -> alien -> chorus -> chop -> reverse -> delay -> reverb
 //
 // Parameters are added in release order instead (v1 modules first, newer ones
 // appended), so parameter lists stay stable as modules are added.

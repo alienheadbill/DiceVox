@@ -60,13 +60,27 @@ public:
     // Loads a preset's sound (BACK can undo it). False if it isn't a preset.
     bool loadPreset (const juce::File& file);
 
+    // Every preset in menu order: the factory Alien Pack first, then the user's.
+    struct PresetEntry
+    {
+        juce::String name;
+        int factoryIndex = -1; // >= 0: built-in preset
+        juce::File file;       // user preset file
+        bool isFactory() const noexcept { return factoryIndex >= 0; }
+    };
+    std::vector<PresetEntry> getPresetList() const;
+    bool loadPreset (const PresetEntry& entry);
+
     // Name of the loaded / saved preset; cleared by a roll. Saved with the project.
     juce::String getPresetName() const;
+    bool isFactoryPresetLoaded() const;
+    bool isCurrentPreset (const PresetEntry& entry) const;
 
     PresetStore presets;
 
-    static constexpr auto rollNameProperty   = "rollName";
-    static constexpr auto presetNameProperty = "presetName";
+    static constexpr auto rollNameProperty     = "rollName";
+    static constexpr auto presetNameProperty   = "presetName";
+    static constexpr auto presetFactoryProperty = "presetFactory";
     static constexpr size_t maxRollHistory = 32;
 
     // Declared before `state` on purpose: the parameter layout is built from it.
@@ -75,6 +89,7 @@ public:
 
 private:
     void pushHistory();
+    void applyPreset (const juce::XmlElement& xml, const juce::String& name, bool factory);
 
     std::vector<juce::ValueTree> rollHistory; // state before each roll / preset load, newest last
     juce::Random diceRandom;

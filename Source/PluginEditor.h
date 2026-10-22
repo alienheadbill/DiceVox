@@ -53,6 +53,9 @@ private:
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
         juce::Rectangle<int> bottomArea;
 
+        struct Star { float x, y, size, alpha; };
+        std::vector<Star> stars; // background starfield, generated once
+
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Content)
     };
 

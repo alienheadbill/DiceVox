@@ -9,6 +9,7 @@
 #include "modules/ReverseModule.h"
 #include "modules/DelayModule.h"
 #include "modules/ReverbModule.h"
+#include "modules/AlienModule.h"
 
 using namespace ahe::theme;
 
@@ -71,6 +72,12 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
     addAndMakeVisible (presetBar);
     addAndMakeVisible (roll);
 
+    // Starfield: fixed seed, so it's the same sky every time the window opens.
+    juce::Random sky (51);
+    for (int i = 0; i < 140; ++i)
+        stars.push_back ({ sky.nextFloat() * (float) designWidth, sky.nextFloat() * (float) designHeight,
+                           0.8f + 1.6f * sky.nextFloat() * sky.nextFloat(), 0.08f + 0.45f * sky.nextFloat() * sky.nextFloat() });
+
     // One card per effect, in signal order.
     auto addCard = [this, &p] (const juce::String& moduleId, const juce::String& title,
                                const juce::String& description, std::vector<EffectCard::KnobSpec> knobs)
@@ -96,6 +103,11 @@ DiceVoxEditor::Content::Content (DiceVoxProcessor& p)
         { LoFiModule::crushId,  "Crush",  "Crush: fewer bits and a lower sample rate (dusty, crunchy, darker)." },
         { LoFiModule::wobbleId, "Wobble", "Wobble: tape wow and flutter, a slowly swaying pitch." },
         { LoFiModule::mixId,    "Mix",    "Mix: blend the crushed sound with the clean vocal." } });
+
+    addCard ("alien", "Alien Voice", "your vocal beamed from a spaceship: saucer ring-mod, android robot or space-radio transmission.", {
+        { AlienModule::modeId,   "Mode",   "Mode: Saucer (ring-mod wobble to metallic bells), Android (robot voice on one metallic note) or Transmission (crackly space radio)." },
+        { AlienModule::amountId, "Amount", "Amount: Saucer = wobble speed / pitch, Android = robot note, Transmission = how rough the signal is." },
+        { AlienModule::mixId,    "Mix",    "Mix: blend the alien voice with your clean vocal." } });
 
     addCard ("chorus", "Chorus", "doubles the vocal and spreads it wide.", {
         { ChorusModule::rateId,  "Rate",  "Rate: how fast the doubled voices drift." },
@@ -199,6 +211,28 @@ void DiceVoxEditor::Content::paint (juce::Graphics& g)
 {
     g.fillAll (colour::canvas);
 
+    // Deep space: a faint purple nebula glow and a fixed starfield (the same
+    // stars every time, so nothing flickers between repaints).
+    {
+        const auto bounds = getLocalBounds().toFloat();
+        juce::ColourGradient nebula (colour::brandPurple.withAlpha (0.16f), bounds.getWidth() * 0.72f, bounds.getHeight() * 0.38f,
+                                     colour::canvas.withAlpha (0.0f), bounds.getWidth() * 0.72f + 420.0f, bounds.getHeight() * 0.38f, true);
+        g.setGradientFill (nebula);
+        g.fillRect (bounds);
+
+        // (Green is reserved for "processing is on", so the second glow is purple too.)
+        juce::ColourGradient glow (colour::purpleSoft.withAlpha (0.06f), bounds.getWidth() * 0.12f, bounds.getHeight() * 0.85f,
+                                   colour::canvas.withAlpha (0.0f), bounds.getWidth() * 0.12f + 300.0f, bounds.getHeight() * 0.85f, true);
+        g.setGradientFill (glow);
+        g.fillRect (bounds);
+
+        for (const auto& s : stars)
+        {
+            g.setColour (juce::Colours::white.withAlpha (s.alpha));
+            g.fillEllipse (s.x - s.size * 0.5f, s.y - s.size * 0.5f, s.size, s.size);
+        }
+    }
+
     // Divider above the bottom row + build info
     g.setColour (colour::border);
     g.fillRect (bottomArea.getX(), bottomArea.getY(), bottomArea.getWidth(), 1);
@@ -206,6 +240,6 @@ void DiceVoxEditor::Content::paint (juce::Graphics& g)
     g.setColour (colour::textMuted);
     g.setFont (juce::Font (font::body (11.0f)));
     const auto dot = juce::String (juce::CharPointer_UTF8 ("  \xc2\xb7  "));
-    g.drawText ("v" JucePlugin_VersionString + dot + "test build",
+    g.drawText ("v" JucePlugin_VersionString + dot + "alien vocal lab" + dot + "test build",
                 bottomArea.withTrimmedTop (space::s), juce::Justification::centredRight, false);
 }

@@ -35,6 +35,10 @@ public:
 private:
     void timerCallback() override;
     void refresh();
+    float beamAmount() const; // 0..1 while the tractor beam animation runs
+
+    static constexpr double beamMs = 900.0;
+    double beamStart = -1.0;   // ms counter when the last ROLL beam started
 
     DiceVoxProcessor& processor;
     std::unique_ptr<juce::Drawable> ufo;

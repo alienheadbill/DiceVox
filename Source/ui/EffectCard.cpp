@@ -89,9 +89,24 @@ void EffectCard::resized()
 void EffectCard::paint (juce::Graphics& g)
 {
     const bool on = power.getToggleState();
+    const auto area = getLocalBounds().toFloat().reduced (0.5f);
 
-    ahe::LookAndFeel::drawPanel (g, getLocalBounds().toFloat().reduced (0.5f), radius::card, colour::panel,
-                                 on ? colour::purpleSoft.withAlpha (0.65f) : colour::border);
+    // A sci-fi module: slightly see-through (the starfield shows faintly), and
+    // when the effect is processing it powers up with a green rim and a green
+    // "power rail" along the top (green = processing is on).
+    ahe::LookAndFeel::drawPanel (g, area, radius::card, colour::panel.withAlpha (0.88f),
+                                 on ? colour::alienGreen.withAlpha (0.7f) : colour::border);
+
+    if (on)
+    {
+        juce::ColourGradient wash (colour::alienGreen.withAlpha (0.10f), area.getCentreX(), area.getY(),
+                                   colour::alienGreen.withAlpha (0.0f), area.getCentreX(), area.getY() + 60.0f, false);
+        g.setGradientFill (wash);
+        g.fillRoundedRectangle (area.reduced (1.0f), radius::card);
+
+        g.setColour (colour::alienGreen);
+        g.fillRoundedRectangle (area.getX() + radius::card, area.getY() + 1.5f, area.getWidth() - 2.0f * radius::card, 2.0f, 1.0f);
+    }
 
     g.setColour (on ? colour::textPrimary : colour::textSecondary);
     g.setFont (juce::Font (font::label (11.5f)));

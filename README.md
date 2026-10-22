@@ -3,15 +3,18 @@
 Vocal multi-effect plugin (VST3). One **ROLL** button generates a new random
 effect chain each click; every effect also has its own on-screen controls.
 
-Current status: **v2 (test build).** Nine effects (Filter, Pitch, Drive, Lo-Fi,
-Chorus, Chop, Reverse, Delay, Reverb), each with an ON/OFF switch, a dice lock and
-knobs on screen. **ROLL** builds a chain with settings that suit vocals and names
-the result ("Dusty Deep Echo Hall"), steered by:
+Current status: **v2 (test build), the alien vocal lab.** Ten effects (Filter, Pitch,
+Drive, Lo-Fi, Alien Voice, Chorus, Chop, Reverse, Delay, Reverb), each with an
+ON/OFF switch, a dice lock and knobs on screen. The look is a starfield, effects
+glow green while they're processing, and the UFO beams down each new roll. **ROLL**
+builds a chain with settings that suit vocals and names it ("Abducted Chipmunk
+Mothership"), steered by:
 
-- **Style:** Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom or Glitch.
+- **Style:** Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom, Glitch or Area 51.
   - **Recipes:** each style has three recipes, and a roll never repeats the last
     one. For example, Dark Toy Box has "music box", "creepy phone" and "uncanny
-    whisper"; Pitched Rage has "chipmunk", "demon" and "octave stack".
+    whisper"; Pitched Rage has "chipmunk", "demon" and "octave stack"; Area 51 has
+    "mothership choir", "crop circle radio" and "android abduction".
   - **What a recipe sets:** its two core effects, which extras may join, and how
     each one is set.
   - **Any Vibe** borrows recipes from every style, or rolls free-form.
@@ -23,8 +26,13 @@ the result ("Dusty Deep Echo Hall"), steered by:
 (`DiceVox-Setup.exe`).
 
 **Presets:** the bar at the top of the window saves the current sound (**SAVE**),
-lists your presets (click the name) and steps through them (**<** / **>**). They're
-plain files in `Documents\AHE Audio\DiceVox\Presets` (`<name>.dicevox`), so you can
+lists presets (click the name) and steps through them (**<** / **>**).
+
+- **Alien Pack:** ten factory presets built into the plug-in, listed first:
+  Mothership Choir, Crop Circle Phone, Area 51 Transmission, Android Abduction,
+  Zero-G Float, Martian Chipmunk, Saucer Wobble, Nebula Swell, Signal Lost and UFO
+  Landing.
+- **Your presets:** plain files in `Documents\AHE Audio\DiceVox\Presets` (`<name>.dicevox`), so you can
 back them up or share them. A preset holds the whole sound (every effect plus Input,
 Mix and Output), but not Bypass or the dice controls. BACK undoes a preset load.
 FL Studio's own preset saving and project recall also work, as before.
@@ -67,11 +75,15 @@ controls); never reorder or remove them after release.
 | `reverse_on` | Reverse On | off / on | off |
 | `reverse_length` | Reverse Length | 1/16, 1/8, 1/4, 1/2 slices (max 1.5 s) | 1/4 |
 | `reverse_mix` | Reverse Mix | 0 – 100 % reversed level (the dry vocal stays at full level) | 40 % |
+| `alien_on` | Alien Voice On | off / on | off |
+| `alien_mode` | Alien Mode | Saucer (ring mod 20 Hz – 1.2 kHz), Android (robot comb 60 – 240 Hz), Transmission (500 Hz – 3 kHz radio band, fades, crackle) | Saucer |
+| `alien_amount` | Alien Amount | 0 – 100 % (carrier / robot note / roughness) | 50 % |
+| `alien_mix` | Alien Mix | 0 – 100 % | 60 % |
 | `dice_level` | Dice Intensity | Low, Medium, High | Medium |
-| `dice_style` | Dice Style | Any Vibe, Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom, Glitch | Any Vibe |
+| `dice_style` | Dice Style | Any Vibe, Dreamy Pop, Dark Toy Box, Pitched Rage, Lo-Fi Bedroom, Glitch, Area 51 | Any Vibe |
 | `dice_lock_<effect>` | Dice Lock … | off / on, one per effect | off |
 
-Chain order: Filter → Pitch → Drive → Lo-Fi → Chorus → Chop → Reverse → Delay → Reverb.
+Chain order: Filter → Pitch → Drive → Lo-Fi → Alien Voice → Chorus → Chop → Reverse → Delay → Reverb.
 No effect reports latency. The pitch and reverse effects trail the dry vocal
 slightly (by design: they're doubles and swells, not replacements for it), so
 their delay isn't compensated. The roll's name is saved with the project; BACK
@@ -166,12 +178,14 @@ Source/
     LoFiModule.*      bitcrush, sample-rate crunch, tape wobble
     ChopModule.*      tempo-synced stutter gate
     ReverseModule.*   tempo-synced reverse slices
+    AlienModule.*     Alien Voice: saucer ring-mod, android robot comb, space-radio transmission
   dsp/
     GrainShifter.*    two-head delay-line pitch shifter (also plays reverse)
   dice/
     DiceRoller.*      ROLL: style recipes, intensity, locks, vocal-friendly settings, names
   presets/
     PresetStore.*     preset files (Documents/AHE Audio/DiceVox/Presets, *.dicevox)
+    FactoryPresets.*  the built-in Alien Pack (10 presets)
   ahe/                shared AHE Audio UI layer (reused by every AHE plug-in)
     AHETheme.h        design tokens: colours, spacing, radii, font roles
     AHEFonts.*        embedded Inter + Barlow Condensed (identical text on every computer)
@@ -219,6 +233,6 @@ Reworked around getting a usable plug-in first, then making it better by ear.
 | Step | Scope |
 |---|---|
 | v1 | 5 effects on screen, ROLL + BACK, Windows installer ✅ |
-| v2 (this build) | Pitch, Lo-Fi, Chop, Reverse; dice styles, intensity, locks; presets ✅ |
+| v2 (this build) | Pitch, Lo-Fi, Chop, Reverse, Alien Voice; dice styles with recipes, LOW/MED/HIGH, locks; presets + Alien Pack; alien look ✅ |
 | Next | Founder feedback by ear: tune styles and ranges; maybe pitch correction (auto-tune), formant control, favourites |
-| Later | Factory presets, more effects (e.g. vocoder, harmonizer), macOS installer |
+| Later | More effects (e.g. vocoder, harmonizer), macOS installer |

@@ -14,6 +14,8 @@
 #include "modules/ChopModule.h"
 #include "modules/ReverseModule.h"
 #include "dice/DiceRoller.h"
+#include "presets/FactoryPresets.h"
+#include "modules/AlienModule.h"
 #include "ahe/AHEBrandMarks.h"
 #include "ahe/AHEFonts.h"
 #include "ui/RollChamber.h"
@@ -331,9 +333,10 @@ int main()
                                            "lofi_on,lofi_crush,lofi_wobble,lofi_mix,"
                                            "chop_on,chop_rate,chop_depth,"
                                            "reverse_on,reverse_length,reverse_mix,"
+                                           "alien_on,alien_mode,alien_amount,alien_mix,"
                                            "dice_level,dice_style,"
                                            "dice_lock_filter,dice_lock_drive,dice_lock_chorus,dice_lock_delay,dice_lock_reverb,"
-                                           "dice_lock_pitch,dice_lock_lofi,dice_lock_chop,dice_lock_reverse",
+                                           "dice_lock_pitch,dice_lock_lofi,dice_lock_chop,dice_lock_reverse,dice_lock_alien",
                "Parameter IDs and order: Phase 1 unchanged, effects and dice controls appended", ids.joinIntoString (",").toStdString());
     }
     {
@@ -358,10 +361,12 @@ int main()
                                       { "lofi_on", 0.0 }, { "lofi_crush", 50.0 }, { "lofi_wobble", 30.0 }, { "lofi_mix", 100.0 },
                                       { "chop_on", 0.0 }, { "chop_rate", 1.0 }, { "chop_depth", 80.0 },
                                       { "reverse_on", 0.0 }, { "reverse_length", 2.0 }, { "reverse_mix", 40.0 },
+                                      { "alien_on", 0.0 }, { "alien_mode", 0.0 }, { "alien_amount", 50.0 }, { "alien_mix", 60.0 },
                                       { "dice_level", 1.0 }, { "dice_style", 0.0 },
                                       { "dice_lock_filter", 0.0 }, { "dice_lock_drive", 0.0 }, { "dice_lock_chorus", 0.0 },
                                       { "dice_lock_delay", 0.0 }, { "dice_lock_reverb", 0.0 }, { "dice_lock_pitch", 0.0 },
-                                      { "dice_lock_lofi", 0.0 }, { "dice_lock_chop", 0.0 }, { "dice_lock_reverse", 0.0 } };
+                                      { "dice_lock_lofi", 0.0 }, { "dice_lock_chop", 0.0 }, { "dice_lock_reverse", 0.0 },
+                                      { "dice_lock_alien", 0.0 } };
 
         bool ok = xml != nullptr && xml->getTagName() == "DiceVoxState"
                && xml->getNumChildElements() == (int) std::size (expected)
@@ -505,7 +510,7 @@ int main()
             auto countOn = [&]
             {
                 int n = 0;
-                for (auto* id : { "filter_on", "pitch_on", "drive_on", "lofi_on", "chorus_on", "chop_on", "reverse_on", "delay_on", "reverb_on" })
+                for (auto* id : { "filter_on", "pitch_on", "drive_on", "lofi_on", "alien_on", "chorus_on", "chop_on", "reverse_on", "delay_on", "reverb_on" })
                     n += p.state.getRawParameterValue (id)->load() > 0.5f ? 1 : 0;
                 return n;
             };
@@ -893,7 +898,7 @@ int main()
     // ---------------------------------------------------------------------
     // Usable v1: drive, chorus, delay, reverb, and the dice
     // ---------------------------------------------------------------------
-    const char* const allEffects[] = { "filter_on", "pitch_on", "drive_on", "lofi_on", "chorus_on",
+    const char* const allEffects[] = { "filter_on", "pitch_on", "drive_on", "lofi_on", "alien_on", "chorus_on",
                                        "chop_on", "reverse_on", "delay_on", "reverb_on" };
     {
         // Drive: rounds off peaks and adds harmonics, without getting much louder.
@@ -1108,7 +1113,7 @@ int main()
         for (int seed = 1; seed <= 60; ++seed)
         {
             DiceVoxProcessor p;
-            setParam (p, ParamIDs::diceStyle, (float) (seed % 6));
+            setParam (p, ParamIDs::diceStyle, (float) (seed % 7));
             setParam (p, ParamIDs::diceLevel, (float) ((seed / 6) % 3));
             juce::Random rng (seed);
             p.rollDice (rng);
@@ -1351,11 +1356,11 @@ int main()
         // vary a lot: three recipes per style, never the same one twice in a
         // row, and many different effect combinations.
         struct Character { int style; const char* a; const char* b; };
-        bool ok = DiceRoller::styleNames().size() == 6 && DiceRoller::numRecipesFor (0) == 15;
+        bool ok = DiceRoller::styleNames().size() == 7 && DiceRoller::numRecipesFor (0) == 18;
         std::string detail;
         for (auto s : { Character { 1, "reverb_on", "chorus_on" }, Character { 2, "lofi_on", "pitch_on" },
                         Character { 3, "pitch_on", "pitch_on" },   Character { 4, "lofi_on", "lofi_on" },
-                        Character { 5, "chop_on", "reverse_on" } })
+                        Character { 5, "chop_on", "reverse_on" }, Character { 6, "alien_on", "pitch_on" } })
         {
             DiceVoxProcessor p;
             setParam (p, ParamIDs::diceStyle, (float) s.style);
@@ -1383,6 +1388,152 @@ int main()
                     + std::to_string (repeats) + " repeats  ";
         }
         check (ok, "Each style keeps its character while rolls vary (3 recipes, no repeats, many combinations)", detail);
+    }
+
+    // ---------------------------------------------------------------------
+    // Alien Voice
+    // ---------------------------------------------------------------------
+    // Level of one frequency in channel 0 (single-bin DFT over whole cycles).
+    auto toneLevel = [] (const juce::AudioBuffer<float>& b, int start, int len, double freq)
+    {
+        double re = 0.0, im = 0.0;
+        for (int n = 0; n < len; ++n)
+        {
+            const double phase = juce::MathConstants<double>::twoPi * freq * n / sampleRate;
+            re += b.getSample (0, start + n) * std::cos (phase);
+            im += b.getSample (0, start + n) * std::sin (phase);
+        }
+        return (float) (2.0 * std::sqrt (re * re + im * im) / len);
+    };
+    auto alienProcessor = [&] (int mode, float amount, float mix)
+    {
+        auto p = std::make_unique<DiceVoxProcessor>();
+        setParam (*p, "alien_on", 1.0f);
+        setParam (*p, AlienModule::modeId, (float) mode);
+        setParam (*p, AlienModule::amountId, amount);
+        setParam (*p, AlienModule::mixId, mix);
+        return p;
+    };
+    {
+        // Saucer: a ring modulator moves a 1 kHz tone to 1 kHz +/- the carrier, nothing left at 1 kHz.
+        auto p = alienProcessor (AlienModule::saucer, 66.1f, 100.0f);
+        const double carrier = AlienModule::ringFrequency (66.1f);
+        auto out = processAll (*p, sine (2, (int) sampleRate, 1000.0, sampleRate, 0.5f), sampleRate);
+        const int start = (int) (0.4 * sampleRate), len = (int) (0.5 * sampleRate);
+        const float below = toneLevel (out, start, len, 1000.0 - carrier), above = toneLevel (out, start, len, 1000.0 + carrier);
+        const float original = toneLevel (out, start, len, 1000.0);
+        check (allFinite (out) && below > 0.15f && above > 0.15f && original < 0.03f,
+               "Alien Saucer ring-modulates (sidebands at 1 kHz +/- carrier, original tone gone)",
+               "carrier " + std::to_string ((int) carrier) + " Hz: " + std::to_string (below) + " / " + std::to_string (above)
+                   + ", 1 kHz left " + std::to_string (original));
+    }
+    {
+        // Android: a comb tuned to the robot note, so a click rings again every
+        // period (60 Hz at Amount 0 = every 800 samples at 48 kHz), quieter each time.
+        auto p = alienProcessor (AlienModule::android, 0.0f, 100.0f);
+        juce::AudioBuffer<float> in (2, (int) (0.5 * sampleRate));
+        in.clear();
+        in.setSample (0, 0, 0.5f);
+        in.setSample (1, 0, 0.5f);
+        auto out = processAll (*p, in, sampleRate);
+        const float first = out.getSample (0, 0), second = out.getSample (0, 800), between = std::abs (out.getSample (0, 400));
+        check (allFinite (out) && first > 0.15f && second > 0.6f * first && second < first && between < 1.0e-6f,
+               "Alien Android rings at the robot note (repeats every period, decaying)",
+               "click " + std::to_string (first) + ", one period later " + std::to_string (second));
+    }
+    {
+        // Transmission: a space-radio band (lows gone, mids kept).
+        auto p = alienProcessor (AlienModule::transmission, 0.0f, 100.0f);
+        auto q = alienProcessor (AlienModule::transmission, 0.0f, 100.0f);
+        const float low = gainDb (*p, 100.0, sampleRate), mid = gainDb (*q, 1500.0, sampleRate);
+        check (low < -8.0f && std::abs (mid) < 4.0f, "Alien Transmission is band-limited like a radio",
+               "100 Hz " + db (low) + ", 1.5 kHz " + db (mid));
+    }
+    {
+        // Every mode at the extremes, on loud noise: bounded, finite; Mix 0 untouched.
+        float worst = 0.0f;
+        bool finite = true, cleanAtZero = true;
+        for (int mode : { 0, 1, 2 })
+            for (float amount : { 0.0f, 100.0f })
+            {
+                auto p = alienProcessor (mode, amount, 100.0f);
+                auto out = processAll (*p, noise (2, (int) sampleRate, 0.5f, 3 + mode), sampleRate);
+                finite &= allFinite (out);
+                worst = std::max (worst, out.getMagnitude (0, out.getNumSamples()));
+
+                auto dry = alienProcessor (mode, amount, 0.0f);
+                cleanAtZero &= run (*dry).maxDiff < 1.0e-5f;
+            }
+        check (finite && worst < 2.0f && cleanAtZero, "Alien Voice is stable in every mode; Mix 0 is untouched",
+               "loudest peak " + std::to_string (worst) + " for input peak 0.5");
+    }
+    {
+        // Roll names lean into space: Area 51 rolls name things like "Cosmic Android Beam".
+        static const juce::StringArray spaceWords { "Martian", "Cosmic", "Nebula", "Abducted", "Zero-G", "Orbital", "Ultraviolet",
+                                                    "Interstellar", "Lunar", "Galactic", "Pod", "Orbit", "Mothership", "Ping",
+                                                    "Beam", "Signal", "Transmission", "Saucer", "Android", "Beamed" };
+        DiceVoxProcessor p;
+        setParam (p, ParamIDs::diceStyle, 6.0f);
+        juce::Random rng (52);
+        int spacey = 0;
+        for (int r = 0; r < 50; ++r)
+        {
+            const auto words = juce::StringArray::fromTokens (p.rollDice (rng), " ", {});
+            bool hit = false;
+            for (auto& w : words)
+                hit |= spaceWords.contains (w);
+            spacey += hit ? 1 : 0;
+        }
+        check (spacey >= 35, "Roll names lean into space (Area 51)", std::to_string (spacey) + " of 50 names");
+    }
+
+    // ---------------------------------------------------------------------
+    // Factory presets (Alien Pack)
+    // ---------------------------------------------------------------------
+    {
+        // Every factory preset: a unique name, only real parameter IDs, loads,
+        // switches on at least two effects, plays back cleanly, and BACK undoes it.
+        DiceVoxProcessor probe;
+        juce::StringArray knownIds, names, problems;
+        for (auto* param : probe.getParameters())
+            knownIds.add (dynamic_cast<juce::RangedAudioParameter*> (param)->getParameterID());
+
+        float worst = 0.0f;
+        for (int i = 0; i < FactoryPresets::count(); ++i)
+        {
+            const auto name = FactoryPresets::name (i);
+            auto xml = FactoryPresets::create (i);
+            if (name.isEmpty() || names.contains (name) || xml == nullptr)
+                problems.add ("bad name/xml #" + juce::String (i));
+            names.add (name);
+
+            if (xml != nullptr)
+                for (auto* child : xml->getChildIterator())
+                    if (! knownIds.contains (child->getStringAttribute ("id")))
+                        problems.add (name + ": unknown " + child->getStringAttribute ("id"));
+
+            DiceVoxProcessor p;
+            const auto list = p.getPresetList();
+            if (! p.loadPreset (list[(size_t) i]) || ! p.isFactoryPresetLoaded() || p.getPresetName() != name)
+                problems.add (name + ": did not load");
+
+            int on = 0;
+            for (auto* id : allEffects)
+                on += valueOf (p, id) > 0.5f ? 1 : 0;
+            if (on < 2)
+                problems.add (name + ": only " + juce::String (on) + " effects");
+
+            auto out = processAll (p, noise (2, (int) sampleRate, 0.3f, 40 + i), sampleRate);
+            if (! allFinite (out))
+                problems.add (name + ": not finite");
+            worst = std::max (worst, out.getMagnitude (0, out.getNumSamples()));
+
+            if (! p.undoRoll() || p.getPresetName().isNotEmpty())
+                problems.add (name + ": BACK did not undo");
+        }
+        check (problems.isEmpty() && FactoryPresets::count() == 10 && worst < 2.5f,
+               "Alien Pack: 10 factory presets load, sound clean, and BACK undoes them",
+               (problems.joinIntoString ("; ") + " loudest " + juce::String (worst)).toStdString());
     }
 
     // ---------------------------------------------------------------------
@@ -1468,7 +1619,8 @@ int main()
         folder.deleteRecursively();
     }
     {
-        // The preset bar's < > step through the presets and wrap around.
+        // The preset bar's < > step through the presets (Alien Pack first, then
+        // the user's) and wrap around both ways.
         const auto folder = tempPresetFolder();
         DiceVoxProcessor p;
         p.presets.setFolder (folder);
@@ -1485,13 +1637,17 @@ int main()
 
         std::string seen;
         if (bar != nullptr)
-            for (int i = 0; i < 3; ++i)
+            for (int offset : { 1, -1, -1, -1, 1 })
             {
-                bar->step (1);
-                seen += p.getPresetName().toStdString() + " ";
+                bar->step (offset);
+                seen += p.getPresetName().toStdString() + (p.isFactoryPresetLoaded() ? "*" : "") + "|";
             }
-        check (bar != nullptr && seen == "One Two One " && valueOf (p, "delay_on") < 0.5f,
-               "Preset bar steps through presets (and loads them)", seen);
+        // From "Two" (last): wrap to the first factory preset, back to "Two", "One",
+        // the last factory preset, then "One" again.
+        const auto first = FactoryPresets::name (0).toStdString(), last = FactoryPresets::name (FactoryPresets::count() - 1).toStdString();
+        const auto expected = first + "*|Two|One|" + last + "*|One|";
+        check (bar != nullptr && seen == expected && valueOf (p, "delay_on") < 0.5f && valueOf (p, "reverb_on") > 0.5f,
+               "Preset bar steps through the Alien Pack and your presets (and loads them)", seen + " expected " + expected);
         folder.deleteRecursively();
     }
 

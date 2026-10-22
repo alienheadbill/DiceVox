@@ -10,16 +10,17 @@
 #include "modules/ReverseModule.h"
 #include "modules/DelayModule.h"
 #include "modules/ReverbModule.h"
+#include "modules/AlienModule.h"
 
 #include <array>
 
 namespace
 {
     // Effects, in chain order (same order as DiceRoller::moduleIds()).
-    enum Module { filter, pitch, drive, lofi, chorus, chop, reverse, delay, reverb, numModules };
+    enum Module { filter, pitch, drive, lofi, alien, chorus, chop, reverse, delay, reverb, numModules };
 
     // Styles, in Style-parameter order (same order as DiceRoller::styleNames()).
-    enum Style { anyVibe, dreamyPop, darkToyBox, pitchedRage, lofiBedroom, glitch, numStyles };
+    enum Style { anyVibe, dreamyPop, darkToyBox, pitchedRage, lofiBedroom, glitch, area51, numStyles };
 
     // Intensity, in level order (same order as DiceRoller::levelNames()):
     // where in each setting's range a roll tends to land, and how many effects.
@@ -29,10 +30,11 @@ namespace
 
     // Free-form rolls (part of Any Vibe): how often each effect comes up.
     constexpr float freeFormWeights[numModules] = {
-        //  filter pitch drive lofi chorus chop reverse delay reverb
-            0.8f,  0.6f, 0.7f, 0.5f, 0.7f, 0.4f, 0.4f,  1.0f, 1.3f };
+        //  filter pitch drive lofi alien chorus chop reverse delay reverb
+            0.8f,  0.6f, 0.7f, 0.5f, 0.4f, 0.7f,  0.4f, 0.4f,   1.0f, 1.3f };
 
     // Ways to set an effect. "any" = the style's usual mix of options.
+    enum class AlienFeel  { any, saucer, android, transmission };
     enum class PitchFeel  { any, octaveDown, octaveUp, octaveEither, harmony, wholeUp, wholeDown, uncanny };
     enum class DelayFeel  { any, slap, dotted, throwIt, rhythmic };
     enum class ReverbFeel { any, room, space, hall };
@@ -60,6 +62,7 @@ namespace
         { 1, 2, 1, 0, 0 }, // Pitched Rage
         { 1, 0, 0, 3, 0 }, // Lo-Fi Bedroom
         { 1, 1, 1, 0, 0 }, // Glitch
+        { 1, 3, 0, 1, 0 }, // Area 51
     };
 
     // A recipe: one recognisable sound within a style. Its two core effects
@@ -69,13 +72,14 @@ namespace
     {
         Style style;
         int core[2];
-        float extraWeights[numModules]; // filter pitch drive lofi chorus chop reverse delay reverb
+        float extraWeights[numModules]; // filter pitch drive lofi alien chorus chop reverse delay reverb
         int filterShape;                // -1 = the style's usual shapes
         PitchFeel pitchFeel;
         DelayFeel delayFeel;
         ReverbFeel reverbFeel;
         LoFiFeel lofiFeel;
         ChopFeel chopFeel;
+        AlienFeel alienFeel;
     };
 
     using PF = PitchFeel;
@@ -83,32 +87,39 @@ namespace
     using RF = ReverbFeel;
     using LF = LoFiFeel;
     using CF = ChopFeel;
+    using AF = AlienFeel;
 
     constexpr Recipe recipes[] = {
+        //                                 filter pitch drive lofi  alien chorus chop reverse delay reverb
         // Dreamy Pop: airy, polished, wide.
-        { dreamyPop, { reverb, chorus }, { 0.6f, 0.8f, 0.3f, 0.0f, 0.0f, 0.0f, 0.3f, 1.0f, 0.0f }, airy, PF::octaveDown,   DF::dotted,   RF::hall,  LF::any,   CF::any },    // airy double
-        { dreamyPop, { reverb, delay },  { 0.5f, 0.3f, 0.2f, 0.0f, 1.0f, 0.0f, 0.4f, 0.0f, 0.0f }, airy, PF::octaveEither, DF::throwIt,  RF::space, LF::any,   CF::any },    // echo throw
-        { dreamyPop, { chorus, pitch },  { 0.4f, 0.0f, 0.3f, 0.0f, 0.0f, 0.0f, 0.3f, 0.8f, 1.5f }, thin, PF::octaveUp,     DF::dotted,   RF::hall,  LF::any,   CF::any },    // glossy stack
+        { dreamyPop, { reverb, chorus }, { 0.6f, 0.8f, 0.3f, 0.0f, 0.1f, 0.0f, 0.0f, 0.3f, 1.0f, 0.0f }, airy, PF::octaveDown,   DF::dotted,   RF::hall,  LF::any,   CF::any, AF::saucer },  // airy double
+        { dreamyPop, { reverb, delay },  { 0.5f, 0.3f, 0.2f, 0.0f, 0.1f, 1.0f, 0.0f, 0.4f, 0.0f, 0.0f }, airy, PF::octaveEither, DF::throwIt,  RF::space, LF::any,   CF::any, AF::saucer },  // echo throw
+        { dreamyPop, { chorus, pitch },  { 0.4f, 0.0f, 0.3f, 0.0f, 0.1f, 0.0f, 0.0f, 0.3f, 0.8f, 1.5f }, thin, PF::octaveUp,     DF::dotted,   RF::hall,  LF::any,   CF::any, AF::saucer },  // glossy stack
 
         // Dark Toy Box: creepy-cute, crunchy, eerie.
-        { darkToyBox, { lofi, pitch },   { 0.5f, 0.0f, 0.2f, 0.0f, 0.4f, 0.2f, 0.6f, 0.4f, 1.2f }, -1,        PF::harmony,      DF::any,  RF::room, LF::tape,  CF::any },  // music box
-        { darkToyBox, { lofi, filter },  { 0.0f, 0.6f, 0.3f, 0.0f, 0.3f, 0.2f, 0.8f, 0.5f, 0.8f }, telephone, PF::octaveEither, DF::slap, RF::any,  LF::crush, CF::any },  // creepy phone
-        { darkToyBox, { pitch, reverb }, { 0.6f, 0.0f, 0.2f, 0.6f, 0.8f, 0.1f, 0.4f, 0.4f, 0.0f }, muffled,   PF::uncanny,      DF::any,  RF::room, LF::any,   CF::any },  // uncanny whisper
+        { darkToyBox, { lofi, pitch },   { 0.5f, 0.0f, 0.2f, 0.0f, 0.3f, 0.4f, 0.2f, 0.6f, 0.4f, 1.2f }, -1,        PF::harmony,      DF::any,  RF::room, LF::tape,  CF::any, AF::saucer },       // music box
+        { darkToyBox, { lofi, filter },  { 0.0f, 0.6f, 0.3f, 0.0f, 0.4f, 0.3f, 0.2f, 0.8f, 0.5f, 0.8f }, telephone, PF::octaveEither, DF::slap, RF::any,  LF::crush, CF::any, AF::transmission }, // creepy phone
+        { darkToyBox, { pitch, reverb }, { 0.6f, 0.0f, 0.2f, 0.6f, 0.3f, 0.8f, 0.1f, 0.4f, 0.4f, 0.0f }, muffled,   PF::uncanny,      DF::any,  RF::room, LF::any,   CF::any, AF::android },      // uncanny whisper
 
         // Pitched Rage: the whole vocal pitched, or stacked octaves, with grit and throws.
-        { pitchedRage, { pitch, delay }, { 0.4f, 0.0f, 1.0f, 0.3f, 0.3f, 0.6f, 0.3f, 0.0f, 0.5f }, radio, PF::wholeUp,      DF::rhythmic, RF::any,   LF::any, CF::groove }, // chipmunk
-        { pitchedRage, { pitch, drive }, { 0.6f, 0.0f, 0.0f, 0.3f, 0.3f, 0.4f, 0.4f, 0.8f, 1.0f }, radio, PF::wholeDown,    DF::throwIt,  RF::space, LF::any, CF::any },    // demon
-        { pitchedRage, { pitch, chop },  { 0.3f, 0.0f, 0.8f, 0.3f, 0.4f, 0.0f, 0.3f, 1.0f, 0.6f }, -1,    PF::octaveEither, DF::rhythmic, RF::any,   LF::any, CF::groove }, // octave stack
+        { pitchedRage, { pitch, delay }, { 0.4f, 0.0f, 1.0f, 0.3f, 0.2f, 0.3f, 0.6f, 0.3f, 0.0f, 0.5f }, radio, PF::wholeUp,      DF::rhythmic, RF::any,   LF::any, CF::groove, AF::saucer },  // chipmunk
+        { pitchedRage, { pitch, drive }, { 0.6f, 0.0f, 0.0f, 0.3f, 0.4f, 0.3f, 0.4f, 0.4f, 0.8f, 1.0f }, radio, PF::wholeDown,    DF::throwIt,  RF::space, LF::any, CF::any,    AF::android }, // demon
+        { pitchedRage, { pitch, chop },  { 0.3f, 0.0f, 0.8f, 0.3f, 0.2f, 0.4f, 0.0f, 0.3f, 1.0f, 0.6f }, -1,    PF::octaveEither, DF::rhythmic, RF::any,   LF::any, CF::groove, AF::any },     // octave stack
 
         // Lo-Fi Bedroom: worn tape, phone memos, dusty rooms.
-        { lofiBedroom, { lofi, reverb }, { 0.8f, 0.3f, 0.6f, 0.0f, 0.8f, 0.1f, 0.3f, 0.4f, 0.0f }, muffled,   PF::octaveDown, DF::any,  RF::room, LF::tape,  CF::any },   // tape demo
-        { lofiBedroom, { lofi, filter }, { 0.0f, 0.2f, 0.4f, 0.0f, 0.4f, 0.1f, 0.3f, 0.5f, 0.6f }, telephone, PF::octaveDown, DF::slap, RF::room, LF::phone, CF::any },   // phone memo
-        { lofiBedroom, { lofi, drive },  { 0.6f, 0.4f, 0.0f, 0.0f, 0.6f, 0.2f, 0.3f, 0.4f, 1.0f }, muffled,   PF::octaveDown, DF::any,  RF::room, LF::crush, CF::any },   // dusty room
+        { lofiBedroom, { lofi, reverb }, { 0.8f, 0.3f, 0.6f, 0.0f, 0.1f, 0.8f, 0.1f, 0.3f, 0.4f, 0.0f }, muffled,   PF::octaveDown, DF::any,  RF::room, LF::tape,  CF::any, AF::saucer },       // tape demo
+        { lofiBedroom, { lofi, filter }, { 0.0f, 0.2f, 0.4f, 0.0f, 0.3f, 0.4f, 0.1f, 0.3f, 0.5f, 0.6f }, telephone, PF::octaveDown, DF::slap, RF::room, LF::phone, CF::any, AF::transmission }, // phone memo
+        { lofiBedroom, { lofi, drive },  { 0.6f, 0.4f, 0.0f, 0.0f, 0.1f, 0.6f, 0.2f, 0.3f, 0.4f, 1.0f }, muffled,   PF::octaveDown, DF::any,  RF::room, LF::crush, CF::any, AF::saucer },       // dusty room
 
         // Glitch: stutters, reverse swells, pitch jumps.
-        { glitch, { chop, delay },    { 0.6f, 0.8f, 0.4f, 0.8f, 0.2f, 0.0f, 0.6f, 0.0f, 0.4f }, -1,    PF::any,          DF::rhythmic, RF::any,  LF::crush, CF::fast },   // stutter
-        { glitch, { reverse, reverb },{ 0.4f, 0.8f, 0.2f, 0.4f, 0.4f, 0.6f, 0.0f, 0.6f, 0.0f }, -1,    PF::octaveEither, DF::any,      RF::hall, LF::any,   CF::any },    // reverse swell
-        { glitch, { chop, pitch },    { 0.4f, 0.0f, 0.3f, 0.6f, 0.2f, 0.0f, 0.8f, 0.6f, 0.4f }, radio, PF::harmony,      DF::any,      RF::any,  LF::any,   CF::groove }, // pitch jumps
+        { glitch, { chop, delay },    { 0.6f, 0.8f, 0.4f, 0.8f, 0.6f, 0.2f, 0.0f, 0.6f, 0.0f, 0.4f }, -1,    PF::any,          DF::rhythmic, RF::any,  LF::crush, CF::fast,   AF::any },    // stutter
+        { glitch, { reverse, reverb },{ 0.4f, 0.8f, 0.2f, 0.4f, 0.5f, 0.4f, 0.6f, 0.0f, 0.6f, 0.0f }, -1,    PF::octaveEither, DF::any,      RF::hall, LF::any,   CF::any,    AF::saucer }, // reverse swell
+        { glitch, { chop, pitch },    { 0.4f, 0.0f, 0.3f, 0.6f, 0.5f, 0.2f, 0.0f, 0.8f, 0.6f, 0.4f }, radio, PF::harmony,      DF::any,      RF::any,  LF::any,   CF::groove, AF::any },    // pitch jumps
+
+        // Area 51: transmissions, androids and the mothership.
+        { area51, { pitch, reverb },  { 0.3f, 0.0f, 0.2f, 0.2f, 0.6f, 1.2f, 0.1f, 0.4f, 0.6f, 0.0f }, airy,  PF::octaveDown,   DF::dotted,   RF::hall,  LF::any,   CF::any,    AF::saucer },       // mothership choir
+        { area51, { alien, filter },  { 0.0f, 0.4f, 0.3f, 0.6f, 0.0f, 0.2f, 0.3f, 0.3f, 1.0f, 0.5f }, radio, PF::octaveEither, DF::slap,     RF::space, LF::crush, CF::any,    AF::transmission }, // crop circle radio
+        { area51, { alien, delay },   { 0.2f, 0.8f, 0.6f, 0.2f, 0.0f, 0.3f, 0.5f, 0.3f, 0.0f, 0.5f }, -1,    PF::wholeDown,    DF::rhythmic, RF::any,   LF::any,   CF::groove, AF::android },      // android abduction
     };
     constexpr int numRecipes = (int) std::size (recipes);
 
@@ -203,13 +214,13 @@ namespace
 
 const juce::StringArray& DiceRoller::moduleIds()
 {
-    static const juce::StringArray ids { "filter", "pitch", "drive", "lofi", "chorus", "chop", "reverse", "delay", "reverb" };
+    static const juce::StringArray ids { "filter", "pitch", "drive", "lofi", "alien", "chorus", "chop", "reverse", "delay", "reverb" };
     return ids;
 }
 
 const juce::StringArray& DiceRoller::styleNames()
 {
-    static const juce::StringArray names { "Any Vibe", "Dreamy Pop", "Dark Toy Box", "Pitched Rage", "Lo-Fi Bedroom", "Glitch" };
+    static const juce::StringArray names { "Any Vibe", "Dreamy Pop", "Dark Toy Box", "Pitched Rage", "Lo-Fi Bedroom", "Glitch", "Area 51" };
     return names;
 }
 
@@ -367,6 +378,28 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
         adjectives.add (wobble > 50.0f ? "Tape" : crush > 70.0f ? "Crushed" : "Dusty");
     }
 
+    if (chosen[alien])
+    {
+        auto feel = recipe != nullptr ? recipe->alienFeel : AlienFeel::any;
+        if (feel == AlienFeel::any)
+            feel = (AlienFeel) (1 + draw.weighted ({ 1, 1, 1 }));
+
+        int mode = AlienModule::saucer;
+        float amount = 0.0f, mix = 0.0f;
+        switch (feel)
+        {
+            case AlienFeel::android:      mode = AlienModule::android;      amount = draw.range (5, 75);  mix = draw.range (35, 85);  break;
+            case AlienFeel::transmission: mode = AlienModule::transmission; amount = draw.range (25, 95); mix = draw.range (65, 100); break;
+            case AlienFeel::saucer:
+            case AlienFeel::any:
+            default:                      mode = AlienModule::saucer;       amount = draw.range (2, 60);  mix = draw.range (20, 60);  break;
+        }
+        setValue (state, AlienModule::modeId, (float) mode);
+        setValue (state, AlienModule::amountId, amount);
+        setValue (state, AlienModule::mixId, mix);
+        adjectives.add (mode == AlienModule::android ? "Android" : mode == AlienModule::transmission ? "Beamed" : "Saucer");
+    }
+
     if (chosen[chorus])
     {
         const float depth = style == dreamyPop ? draw.range (30, 85) : draw.range (20, 90);
@@ -416,7 +449,7 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
         setValue (state, DelayModule::timeId, (float) division);
         setValue (state, DelayModule::feedbackId, draw.range (10, 70));
         setValue (state, DelayModule::mixId, mix);
-        nouns.add (division == 0 ? "Slap" : division == 7 ? "Throw" : "Echo");
+        nouns.add (division == 0 ? "Ping" : division == 7 ? "Beam" : "Echo");
     }
 
     if (chosen[reverb])
@@ -432,7 +465,7 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
         }
         setValue (state, ReverbModule::sizeId, size);
         setValue (state, ReverbModule::mixId, mix);
-        nouns.add (size < 50.0f ? "Room" : size < 78.0f ? "Space" : "Hall");
+        nouns.add (size < 50.0f ? "Pod" : size < 78.0f ? "Orbit" : "Mothership");
     }
 
     // 3. Switch the chosen effects on and the other unlocked ones off.
@@ -440,11 +473,23 @@ juce::String DiceRoller::roll (juce::AudioProcessorValueTreeState& state, juce::
         if (! locked[(size_t) m])
             setValue (state, FxChain::enabledParamId (ids[m]), chosen[(size_t) m] ? 1.0f : 0.0f);
 
-    // Name: up to two describing words, then the space ("Vox" when there's none).
+    // Name: up to two describing words (sometimes one from outer space), then
+    // the echo / space ("Signal", "Vox" or "Transmission" when there's none).
+    static const juce::StringArray cosmicWords { "Martian", "Cosmic", "Nebula", "Abducted", "Zero-G",
+                                                 "Orbital", "Ultraviolet", "Interstellar", "Lunar", "Galactic" };
     while (adjectives.size() > 2)
         adjectives.remove (rng.nextInt (adjectives.size()));
+    if (draw.chance (0.45f))
+    {
+        if (adjectives.size() == 2)
+            adjectives.remove (rng.nextInt (2));
+        adjectives.insert (0, cosmicWords[rng.nextInt (cosmicWords.size())]);
+    }
     if (nouns.isEmpty())
-        nouns.add ("Vox");
+    {
+        static const juce::StringArray loneNouns { "Signal", "Vox", "Transmission" };
+        nouns.add (loneNouns[rng.nextInt (loneNouns.size())]);
+    }
     adjectives.addArray (nouns);
     return adjectives.joinIntoString (" ");
 }

@@ -72,20 +72,19 @@ void PresetBar::refresh()
 
 void PresetBar::step (int offset)
 {
-    const auto files = processor.presets.list();
-    if (files.isEmpty())
+    const auto list = processor.getPresetList(); // Alien Pack first, then the user's presets
+    if (list.empty())
         return;
 
-    const auto current = processor.getPresetName();
     int index = -1;
-    for (int i = 0; i < files.size(); ++i)
-        if (PresetStore::nameOf (files[i]) == current)
-            index = i;
+    for (size_t i = 0; i < list.size(); ++i)
+        if (processor.isCurrentPreset (list[i]))
+            index = (int) i;
 
-    const int count = files.size();
+    const int count = (int) list.size();
     const int next = index < 0 ? (offset > 0 ? 0 : count - 1)
                                : ((index + offset) % count + count) % count;
-    processor.loadPreset (files[next]);
+    processor.loadPreset (list[(size_t) next]);
     refresh();
 }
 
@@ -98,17 +97,25 @@ bool PresetBar::saveAs (const juce::String& name)
 
 void PresetBar::showMenu()
 {
-    const auto files = processor.presets.list();
-    const auto current = processor.getPresetName();
+    const auto list = processor.getPresetList();
 
+    // Item IDs are list index + 1 (0 means "menu dismissed").
     juce::PopupMenu menu;
-    if (files.isEmpty())
-        menu.addItem (-1, "No presets yet: click SAVE to make one", false);
-
-    for (int i = 0; i < files.size(); ++i)
+    menu.addSectionHeader ("ALIEN PACK");
+    bool userHeaderAdded = false;
+    for (size_t i = 0; i < list.size(); ++i)
     {
-        const auto name = PresetStore::nameOf (files[i]);
-        menu.addItem (i + 1, name, true, name == current);
+        if (! list[i].isFactory() && ! userHeaderAdded)
+        {
+            menu.addSectionHeader ("YOUR PRESETS");
+            userHeaderAdded = true;
+        }
+        menu.addItem ((int) i + 1, list[i].name, true, processor.isCurrentPreset (list[i]));
+    }
+    if (! userHeaderAdded)
+    {
+        menu.addSectionHeader ("YOUR PRESETS");
+        menu.addItem (-1, "None yet: click SAVE to make one", false);
     }
 
     menu.addSeparator();
@@ -117,7 +124,7 @@ void PresetBar::showMenu()
 
     juce::Component::SafePointer<PresetBar> safeThis (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&nameButton),
-                        [safeThis, files] (int result)
+                        [safeThis, list] (int result)
                         {
                             if (safeThis == nullptr || result == 0)
                                 return;
@@ -132,9 +139,9 @@ void PresetBar::showMenu()
                                 folder.createDirectory();
                                 folder.startAsProcess();
                             }
-                            else if (result >= 1 && result <= files.size())
+                            else if (result >= 1 && result <= (int) list.size())
                             {
-                                safeThis->processor.loadPreset (files[result - 1]);
+                                safeThis->processor.loadPreset (list[(size_t) result - 1]);
                                 safeThis->refresh();
                             }
                         });

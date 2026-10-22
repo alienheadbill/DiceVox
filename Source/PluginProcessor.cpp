@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "Params.h"
 #include "dice/DiceRoller.h"
+#include "presets/FactoryPresets.h"
 
 DiceVoxProcessor::DiceVoxProcessor()
     : AudioProcessor (BusesProperties()
@@ -195,6 +196,7 @@ bool DiceVoxProcessor::undoRoll()
 
     state.state.setProperty (rollNameProperty, snapshot.getProperty (rollNameProperty), nullptr);
     state.state.setProperty (presetNameProperty, snapshot.getProperty (presetNameProperty), nullptr);
+    state.state.setProperty (presetFactoryProperty, snapshot.getProperty (presetFactoryProperty, false), nullptr);
     return true;
 }
 
@@ -210,8 +212,36 @@ juce::File DiceVoxProcessor::savePreset (const juce::String& name)
 {
     const auto file = presets.save (state, name, getRollName());
     if (file.existsAsFile())
+    {
         state.state.setProperty (presetNameProperty, PresetStore::nameOf (file), nullptr);
+        state.state.setProperty (presetFactoryProperty, false, nullptr);
+    }
     return file;
+}
+
+void DiceVoxProcessor::applyPreset (const juce::XmlElement& xml, const juce::String& name, bool factory)
+{
+    pushHistory();
+    rollHistory.back().setProperty (beforePresetProperty, true, nullptr);
+
+    // Every sound parameter: the preset's value, or the default if the preset
+    // doesn't list it (older presets, and factory presets, which only list
+    // what they change).
+    for (auto* param : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+        if (ranged == nullptr || ! PresetStore::isPresetParameter (ranged->getParameterID()))
+            continue;
+
+        const auto* saved = xml.getChildByAttribute ("id", ranged->getParameterID());
+        const float value = saved != nullptr ? (float) saved->getDoubleAttribute ("value")
+                                             : ranged->convertFrom0to1 (ranged->getDefaultValue());
+        setParameterValue (*ranged, value);
+    }
+
+    state.state.setProperty (rollNameProperty, xml.getStringAttribute ("rollName"), nullptr);
+    state.state.setProperty (presetNameProperty, name, nullptr);
+    state.state.setProperty (presetFactoryProperty, factory, nullptr);
 }
 
 bool DiceVoxProcessor::loadPreset (const juce::File& file)
@@ -220,31 +250,46 @@ bool DiceVoxProcessor::loadPreset (const juce::File& file)
     if (xml == nullptr)
         return false;
 
-    pushHistory();
-    rollHistory.back().setProperty (beforePresetProperty, true, nullptr);
+    applyPreset (*xml, PresetStore::nameOf (file), false);
+    return true;
+}
 
-    // Every sound parameter: the preset's value, or the default if the preset
-    // is older than the parameter.
-    for (auto* param : getParameters())
-    {
-        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
-        if (ranged == nullptr || ! PresetStore::isPresetParameter (ranged->getParameterID()))
-            continue;
+std::vector<DiceVoxProcessor::PresetEntry> DiceVoxProcessor::getPresetList() const
+{
+    std::vector<PresetEntry> list;
+    for (int i = 0; i < FactoryPresets::count(); ++i)
+        list.push_back ({ FactoryPresets::name (i), i, {} });
+    for (auto& file : presets.list())
+        list.push_back ({ PresetStore::nameOf (file), -1, file });
+    return list;
+}
 
-        const auto* saved = xml->getChildByAttribute ("id", ranged->getParameterID());
-        const float value = saved != nullptr ? (float) saved->getDoubleAttribute ("value")
-                                             : ranged->convertFrom0to1 (ranged->getDefaultValue());
-        setParameterValue (*ranged, value);
-    }
+bool DiceVoxProcessor::loadPreset (const PresetEntry& entry)
+{
+    if (! entry.isFactory())
+        return loadPreset (entry.file);
 
-    state.state.setProperty (rollNameProperty, xml->getStringAttribute ("rollName"), nullptr);
-    state.state.setProperty (presetNameProperty, PresetStore::nameOf (file), nullptr);
+    const auto xml = FactoryPresets::create (entry.factoryIndex);
+    if (xml == nullptr)
+        return false;
+
+    applyPreset (*xml, entry.name, true);
     return true;
 }
 
 juce::String DiceVoxProcessor::getPresetName() const
 {
     return state.state.getProperty (presetNameProperty).toString();
+}
+
+bool DiceVoxProcessor::isFactoryPresetLoaded() const
+{
+    return (bool) state.state.getProperty (presetFactoryProperty, false);
+}
+
+bool DiceVoxProcessor::isCurrentPreset (const PresetEntry& entry) const
+{
+    return getPresetName().isNotEmpty() && entry.name == getPresetName() && entry.isFactory() == isFactoryPresetLoaded();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

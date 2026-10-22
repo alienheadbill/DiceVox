@@ -8,6 +8,7 @@
 #include "LoFiModule.h"
 #include "ChopModule.h"
 #include "ReverseModule.h"
+#include "AlienModule.h"
 
 FxChain::FxChain()
 {
@@ -17,6 +18,7 @@ FxChain::FxChain()
     modules.push_back (std::make_unique<PitchModule>());
     modules.push_back (std::make_unique<DriveModule>());
     modules.push_back (std::make_unique<LoFiModule>());
+    modules.push_back (std::make_unique<AlienModule>());
     modules.push_back (std::make_unique<ChorusModule>());
     modules.push_back (std::make_unique<ChopModule>());
     modules.push_back (std::make_unique<ReverseModule>());
@@ -26,7 +28,7 @@ FxChain::FxChain()
     // Parameter order: the order modules were released in. Append new modules
     // at the end; never reorder or remove one after release.
     parameterOrder = juce::StringArray { "filter", "drive", "chorus", "delay", "reverb", // v1
-                                         "pitch", "lofi", "chop", "reverse" };            // v2
+                                         "pitch", "lofi", "chop", "reverse", "alien" };   // v2
     jassert (parameterOrder.size() == (int) modules.size());
 
     fades.resize (modules.size());

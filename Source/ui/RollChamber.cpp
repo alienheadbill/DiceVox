@@ -17,7 +17,15 @@ RollChamber::RollChamber (DiceVoxProcessor& p)
                            "Locked effects stay as they are; Input, Mix and Output are never changed.");
     rollButton.setTitle ("Roll");
     rollButton.setWantsKeyboardFocus (true);
-    rollButton.onClick = [this] { processor.rollDice(); refresh(); };
+    rollButton.onClick = [this]
+    {
+        processor.rollDice();
+        refresh();
+
+        // Tractor beam: the UFO beams the new sound down (a short animation).
+        beamStart = juce::Time::getMillisecondCounterHiRes();
+        startTimerHz (60);
+    };
     addAndMakeVisible (rollButton);
 
     backButton.setTooltip ("BACK: return to the effects you had before the last roll.");
@@ -34,7 +42,8 @@ RollChamber::RollChamber (DiceVoxProcessor& p)
                          "Dark Toy Box: lo-fi crunch, telephone filters, eerie pitch doubles.\n"
                          "Pitched Rage: pitched-up or -down vocals, grit, echo throws, chops.\n"
                          "Lo-Fi Bedroom: tape wobble, crushed and muffled, roomy.\n"
-                         "Glitch: stutter chops, reverse swells, pitch jumps.");
+                         "Glitch: stutter chops, reverse swells, pitch jumps.\n"
+                         "Area 51: mothership choirs, crop-circle radio, android abductions.");
     styleBox.setTitle ("Dice style");
     styleBox.setComponentID (ParamIDs::diceStyle);
     addAndMakeVisible (styleBox);
@@ -80,6 +89,17 @@ void RollChamber::refresh()
 void RollChamber::timerCallback()
 {
     refresh();
+
+    if (beamStart >= 0.0)
+    {
+        repaint (iconArea.expanded (8, 6).withBottom (getHeight()));
+        if (juce::Time::getMillisecondCounterHiRes() - beamStart > beamMs)
+        {
+            beamStart = -1.0;
+            startTimerHz (8); // back to the slow refresh
+            repaint();
+        }
+    }
 }
 
 void RollChamber::resized()
@@ -106,12 +126,56 @@ void RollChamber::resized()
     textArea = area;
 }
 
+float RollChamber::beamAmount() const
+{
+    if (beamStart < 0.0)
+        return 0.0f;
+    const auto t = (juce::Time::getMillisecondCounterHiRes() - beamStart) / beamMs;
+    return t >= 1.0 ? 0.0f : (float) std::sin (juce::MathConstants<double>::pi * t); // up, then fade out
+}
+
 void RollChamber::paint (juce::Graphics& g)
 {
     ahe::LookAndFeel::drawPanel (g, getLocalBounds().toFloat().reduced (0.5f), radius::hero);
 
+    // Tractor beam under the UFO after a ROLL (purple light: green is kept for
+    // "processing is on"), with the UFO bobbing as it beams.
+    const float beam = beamAmount();
+    auto ufoArea = iconArea.toFloat().translated (0.0f, -3.0f * beam);
+    if (beam > 0.0f)
+    {
+        const float topY = ufoArea.getCentreY() + ufoArea.getHeight() * 0.12f;
+        const float bottomY = (float) getHeight() - 4.0f;
+        const float cx = ufoArea.getCentreX();
+        const float topHalf = ufoArea.getWidth() * 0.12f, bottomHalf = ufoArea.getWidth() * 0.5f;
+
+        juce::Path cone;
+        cone.startNewSubPath (cx - topHalf, topY);
+        cone.lineTo (cx + topHalf, topY);
+        cone.lineTo (cx + bottomHalf, bottomY);
+        cone.lineTo (cx - bottomHalf, bottomY);
+        cone.closeSubPath();
+
+        juce::ColourGradient light (colour::purpleSoft.withAlpha (0.55f * beam), cx, topY,
+                                    colour::purpleSoft.withAlpha (0.0f), cx, bottomY, false);
+        g.setGradientFill (light);
+        g.fillPath (cone);
+
+        // A few sparks drifting up the beam.
+        juce::Random sparks (7);
+        const float rise = 1.0f - beam;
+        for (int i = 0; i < 6; ++i)
+        {
+            const float y = bottomY - (bottomY - topY) * std::fmod (sparks.nextFloat() + rise, 1.0f);
+            const float span = topHalf + (bottomHalf - topHalf) * (y - topY) / (bottomY - topY);
+            const float x = cx + (sparks.nextFloat() * 2.0f - 1.0f) * span * 0.8f;
+            g.setColour (juce::Colours::white.withAlpha (0.8f * beam));
+            g.fillEllipse (x - 1.2f, y - 1.2f, 2.4f, 2.4f);
+        }
+    }
+
     if (ufo != nullptr)
-        ufo->drawWithin (g, iconArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        ufo->drawWithin (g, ufoArea, juce::RectanglePlacement::centred, 1.0f);
 
     g.setColour (colour::textSecondary);
     g.setFont (juce::Font (font::label (10.0f)));

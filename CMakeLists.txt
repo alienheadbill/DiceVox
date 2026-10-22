@@ -50,9 +50,11 @@ target_sources(DiceVox PRIVATE
     Source/modules/LoFiModule.cpp
     Source/modules/ChopModule.cpp
     Source/modules/ReverseModule.cpp
+    Source/modules/AlienModule.cpp
     Source/dsp/GrainShifter.cpp
     Source/dice/DiceRoller.cpp
     Source/presets/PresetStore.cpp
+    Source/presets/FactoryPresets.cpp
     # Shared AHE Audio UI layer (candidate for the future ahe-core repo)
     Source/ahe/AHEFonts.cpp
     Source/ahe/AHELookAndFeel.cpp
